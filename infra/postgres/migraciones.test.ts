@@ -49,6 +49,7 @@ describe.skipIf(!url)('migraciones Postgres (spec §6, §16 RLS)', () => {
       'motivos_declinacion',
       'trs',
       'viajes',
+      'metricas_mes',
       'recaudos',
       'audit_log',
     ]) {

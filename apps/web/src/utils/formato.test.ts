@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  resumenCambios,
   rutaInicialPorRol,
   textoElegibilidad,
   textoPosicion,
@@ -33,5 +34,18 @@ describe('formato', () => {
   it('describe la elegibilidad en lenguaje de operación', () => {
     expect(textoElegibilidad(null)).toBe('Elegible');
     expect(textoElegibilidad('VEHICULO_NO_HABILITADO')).toBe('No habilitada');
+  });
+
+  it('resume el antes/después de la auditoría en líneas legibles (spec §9.2 Superadmin)', () => {
+    expect(resumenCambios({ oferta_ttl_minutos: 120 }, { oferta_ttl_minutos: 90 })).toEqual([
+      'oferta_ttl_minutos: 120 → 90',
+    ]);
+    expect(resumenCambios(null, { motivo: 'Asamblea', posicion: 3 })).toEqual([
+      'motivo: Asamblea',
+      'posicion: 3',
+    ]);
+    expect(resumenCambios({ a: 1 }, { a: 1 })).toEqual(['sin cambios']);
+    expect(resumenCambios({ a: 1 }, null)).toEqual(['eliminado']);
+    expect(resumenCambios(null, 'texto')).toEqual(['texto']);
   });
 });
