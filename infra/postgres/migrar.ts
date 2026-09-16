@@ -5,7 +5,10 @@ import pg from 'pg';
 
 // Runner de migraciones SQL (RULE-019): archivos append-only, aplicados en orden, cada uno en su transacción.
 
-const DIR_MIGRACIONES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'migrations');
+// En la imagen de producción el runner va empaquetado y los .sql se copian aparte (TASK-0032).
+const DIR_MIGRACIONES =
+  process.env.MIGRACIONES_DIR ??
+  path.join(path.dirname(fileURLToPath(import.meta.url)), 'migrations');
 
 export interface ResultadoMigracion {
   aplicadas: string[];

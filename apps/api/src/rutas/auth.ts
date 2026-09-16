@@ -1,43 +1,79 @@
-import type { FastifyInstance } from 'fastify';
-import { ErrorDominio, type Reloj } from '@asotracmet/domain';
-import { DURACION_SESION_HORAS, LoginSchema } from '@asotracmet/shared';
-import { verificarPassword } from '../auth/passwords.js';
-import { firmarToken } from '../auth/tokens.js';
-import { usuarioPublico, type AlmacenUsuarios } from '../usuarios.js';
+import { isIP } from 'node:net';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import {
+  CanjearEnlaceSchema,
+  LoginSchema,
+  ReauthSchema,
+  SolicitarAccesoSchema,
+  VerificarOtpSchema,
+  VerificarTotpSchema,
+} from '@asotracmet/shared';
+import { sesionDe } from '../auth/plugin.js';
+import type { MetaPeticion, ServicioAuth } from '../auth/servicio.js';
+import { usuarioPublico } from '../usuarios.js';
 
 export interface DepsAuth {
-  usuarios: AlmacenUsuarios;
-  secreto: string;
-  reloj: Reloj;
+  servicio: ServicioAuth;
   loginRateLimitMax: number;
 }
 
-export function rutasAuth(app: FastifyInstance, deps: DepsAuth): void {
-  app.post(
-    '/api/v1/auth/login',
-    { config: { rateLimit: { max: deps.loginRateLimitMax, timeWindow: '1 minute' } } },
-    async (req, reply) => {
-      const { email, password } = LoginSchema.parse(req.body);
-      const usuario = deps.usuarios.porEmail(email);
-      if (!usuario || !usuario.activo || !verificarPassword(password, usuario.passwordHash)) {
-        throw new ErrorDominio('UNAUTHORIZED', 'Credenciales inválidas');
-      }
-      const ahora = deps.reloj.ahora();
-      const exp = Math.floor(ahora.getTime() / 1000) + DURACION_SESION_HORAS[usuario.rol] * 3600;
-      const token = firmarToken({ sub: usuario.id, rol: usuario.rol, exp }, deps.secreto);
-      return reply.send({
-        token,
-        expiraEn: new Date(exp * 1000).toISOString(),
-        usuario: usuarioPublico(usuario),
-      });
-    },
-  );
+function meta(req: FastifyRequest): MetaPeticion {
+  const agente = req.headers['user-agent'];
+  return {
+    ip: req.ip && isIP(req.ip) ? req.ip : null,
+    userAgent: typeof agente === 'string' ? agente.slice(0, 300) : null,
+  };
+}
 
-  // Sesión stateless en fase puente: el cliente descarta el token. Revocación real en TASK-0018.
-  app.post('/api/v1/auth/logout', async (_req, reply) => reply.status(204).send());
+/** Rutas de acceso (spec §8.1 y §3.3). Todas con rate limit por IP (spec §12). */
+export function rutasAuth(app: FastifyInstance, deps: DepsAuth): void {
+  const limitado = {
+    config: { rateLimit: { max: deps.loginRateLimitMax, timeWindow: '1 minute' } },
+  };
+
+  // Con contraseña: primer factor de un rol interno → reto TOTP. Sin contraseña: código o enlace por correo.
+  app.post('/api/v1/auth/login', limitado, async (req, reply) => {
+    const { email, password } = LoginSchema.parse(req.body);
+    return reply.send(await deps.servicio.login(email, password, meta(req)));
+  });
+
+  app.post('/api/v1/auth/2fa/verify', limitado, async (req, reply) => {
+    const { challenge, codigo } = VerificarTotpSchema.parse(req.body);
+    return reply.send(await deps.servicio.verificarTotp(challenge, codigo, meta(req)));
+  });
+
+  app.post('/api/v1/auth/otp/verify', limitado, async (req, reply) => {
+    const { email, codigo } = VerificarOtpSchema.parse(req.body);
+    return reply.send(await deps.servicio.verificarOtp(email, codigo, meta(req)));
+  });
+
+  app.post('/api/v1/auth/magic-link', limitado, async (req, reply) => {
+    const { email } = SolicitarAccesoSchema.parse(req.body);
+    await deps.servicio.solicitarCodigo(email);
+    return reply.send({ paso: 'codigo_enviado' });
+  });
+
+  app.post('/api/v1/auth/magic-link/canjear', limitado, async (req, reply) => {
+    const { token } = CanjearEnlaceSchema.parse(req.body);
+    return reply.send(await deps.servicio.canjearMagicLink(token, meta(req)));
+  });
+
+  // Revoca la sesión de verdad: el mismo token deja de valer al instante.
+  app.post('/api/v1/auth/logout', async (req, reply) => {
+    await deps.servicio.cerrarSesion(sesionDe(req).sesion);
+    return reply.status(204).send();
+  });
+
+  app.post('/api/v1/auth/reauth', limitado, async (req, reply) => {
+    const credencial = ReauthSchema.parse(req.body);
+    return reply.send(await deps.servicio.reauth(sesionDe(req), credencial));
+  });
 
   app.get('/api/v1/me', async (req, reply) => {
-    if (!req.usuario) throw new ErrorDominio('UNAUTHORIZED');
-    return reply.send(usuarioPublico(req.usuario));
+    const { sesion, usuario } = sesionDe(req);
+    return reply.send({
+      ...usuarioPublico(usuario),
+      sesion: { expiraEn: sesion.expiraEn, reauthHasta: sesion.reauthHasta },
+    });
   });
 }

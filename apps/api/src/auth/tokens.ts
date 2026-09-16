@@ -1,13 +1,11 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { esRol, type Rol } from '@asotracmet/shared';
 
-// Token de sesión firmado (HMAC-SHA256). Sin dependencias externas.
-// Fase producto: OTP + 2FA + refresh tokens (TASK-0018).
+// Tokens firmados (HMAC-SHA256) de corta vida y sin estado: el reto de segundo factor entre
+// la contraseña y el código TOTP. Las sesiones NO viajan aquí: son opacas y revocables (sesiones.ts).
 
-export interface PayloadSesion {
-  sub: string;
-  rol: Rol;
-  /** Epoch segundos. */
+export interface PayloadFirmado {
+  proposito: string;
+  /** Epoch en segundos. */
   exp: number;
 }
 
@@ -19,12 +17,18 @@ function firma(cuerpo: string, secreto: string): string {
   return createHmac('sha256', secreto).update(cuerpo).digest('base64url');
 }
 
-export function firmarToken(payload: PayloadSesion, secreto: string): string {
+export function firmarToken<T extends PayloadFirmado>(payload: T, secreto: string): string {
   const cuerpo = b64url(JSON.stringify(payload));
   return `${cuerpo}.${firma(cuerpo, secreto)}`;
 }
 
-export function verificarToken(token: string, secreto: string, ahora: Date): PayloadSesion | null {
+/** Devuelve el payload solo si la firma es válida, no ha expirado y el propósito coincide. */
+export function verificarToken<T extends PayloadFirmado>(
+  token: string,
+  secreto: string,
+  ahora: Date,
+  proposito: T['proposito'],
+): T | null {
   const [cuerpo, firmaRecibida] = token.split('.');
   if (!cuerpo || !firmaRecibida) return null;
   const esperada = firma(cuerpo, secreto);
@@ -32,19 +36,10 @@ export function verificarToken(token: string, secreto: string, ahora: Date): Pay
   const b = Buffer.from(esperada);
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
   try {
-    const payload = JSON.parse(
-      Buffer.from(cuerpo, 'base64url').toString('utf8'),
-    ) as Partial<PayloadSesion>;
-    if (
-      typeof payload.sub !== 'string' ||
-      typeof payload.exp !== 'number' ||
-      !payload.rol ||
-      !esRol(payload.rol)
-    ) {
-      return null;
-    }
+    const payload = JSON.parse(Buffer.from(cuerpo, 'base64url').toString('utf8')) as Partial<T>;
+    if (typeof payload.exp !== 'number' || payload.proposito !== proposito) return null;
     if (payload.exp * 1000 <= ahora.getTime()) return null;
-    return { sub: payload.sub, rol: payload.rol, exp: payload.exp };
+    return payload as T;
   } catch {
     return null;
   }

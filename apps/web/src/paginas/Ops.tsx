@@ -2,9 +2,22 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { CLASES_COLA, puede, type ClaseCola } from '@asotracmet/shared';
 import { api, codigoDeError } from '../api/cliente';
-import type { Cliente, VistaCola, VistaOferta, VistaRequerimiento, VistaTr } from '../api/tipos';
+import type {
+  Cliente,
+  Intervencion,
+  VistaCola,
+  VistaOferta,
+  VistaRequerimiento,
+  VistaTr,
+} from '../api/tipos';
 import { useSesion } from '../sesion/contexto';
-import { formatearFechaHora, textoElegibilidad, tonoEstado, traducirError } from '../utils/formato';
+import {
+  formatearFechaHora,
+  textoElegibilidad,
+  textoIntervencion,
+  tonoEstado,
+  traducirError,
+} from '../utils/formato';
 
 const REFRESCO_MS = 4_000;
 
@@ -41,6 +54,12 @@ export function Ops() {
   const trs = useQuery({
     queryKey: ['trs'],
     queryFn: () => api<VistaTr[]>('/trs'),
+    refetchInterval: REFRESCO_MS,
+  });
+  // Override y reset de superadmin, visibles para todos los que ven la cola (spec §21).
+  const intervenciones = useQuery({
+    queryKey: ['intervenciones', clase],
+    queryFn: () => api<Intervencion[]>(`/colas/${clase}/intervenciones`),
     refetchInterval: REFRESCO_MS,
   });
 
@@ -227,6 +246,18 @@ export function Ops() {
               <strong>{t.placa}</strong>{' '}
               <span className="detalle">
                 {t.cliente} · {t.fechaAsignacion}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <h3>Intervenciones en {clase}</h3>
+        {intervenciones.data?.length === 0 && <p className="detalle">Ninguna.</p>}
+        <ul className="lista" data-testid="intervenciones">
+          {intervenciones.data?.map((i) => (
+            <li key={i.id} className="item" data-testid="intervencion">
+              <span className="badge rojo">{textoIntervencion(i.accion)}</span>{' '}
+              <span className="detalle">
+                {formatearFechaHora(i.at)} · {i.actorRol} · {i.after?.motivo ?? ''}
               </span>
             </li>
           ))}

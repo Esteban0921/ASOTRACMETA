@@ -1,4 +1,14 @@
-import type { ClaseCola, EstadoOferta, EstadoTr, Rol } from '@asotracmet/shared';
+import type {
+  ClaseCola,
+  ClaseVehiculo,
+  EstadoDocumento,
+  EstadoOferta,
+  EstadoRecaudo,
+  EstadoTr,
+  EstadoViaje,
+  EstadoVehiculo,
+  Rol,
+} from '@asotracmet/shared';
 
 // Proyecciones que devuelve la API (apps/api/src/vistas.ts). Se mantienen a mano hasta TASK-0024 (OpenAPI).
 
@@ -7,8 +17,10 @@ export interface UsuarioSesion {
   email: string;
   nombre: string;
   rol: Rol;
+  activo: boolean;
   asociadoId: string | null;
   vehiculoIds: string[];
+  totpConfigurado: boolean;
 }
 
 export interface Sesion {
@@ -16,6 +28,13 @@ export interface Sesion {
   expiraEn: string;
   usuario: UsuarioSesion;
 }
+
+/** Respuesta de `POST /auth/login` (spec §3.3): el acceso se completa en un segundo paso. */
+export type RespuestaLogin =
+  | { paso: 'codigo_enviado' }
+  | { paso: 'totp'; challenge: string }
+  | { paso: 'totp_enrolar'; challenge: string; secret: string; otpauthUrl: string }
+  | ({ paso: 'sesion' } & Sesion);
 
 export interface Cliente {
   id: string;
@@ -105,4 +124,234 @@ export interface MiPosicion {
   claseCola: ClaseCola;
   posicion: number;
   total: number;
+}
+
+export interface VistaVehiculo {
+  id: string;
+  placa: string;
+  clase: string;
+  claseCola: ClaseCola;
+  estado: string;
+  noElegibleHasta: string | null;
+  asociadoId: string;
+  asociado: { id: string; nombre: string; documento: string | null } | null;
+  habilitaciones: Array<{
+    clienteId: string;
+    cliente: string | null;
+    apto: boolean;
+    motivoBloqueo: string | null;
+  }>;
+}
+
+// --- Maestros (spec §6.2-6.4) ---------------------------------------------------------------
+
+export interface VistaAsociado {
+  id: string;
+  tipo: 'persona' | 'empresa';
+  nombre: string;
+  nombres: string | null;
+  apellidos: string | null;
+  razonSocial: string | null;
+  documento: string | null;
+  documentoTipo: string | null;
+  celular: string | null;
+  correo: string | null;
+  direccion: string | null;
+  cuentaBancariaRegistrada: boolean;
+  estado: 'activo' | 'inactivo' | 'retirado';
+  fechaAfiliacion: string | null;
+  eliminadoEn: string | null;
+}
+
+export interface VistaVehiculoRegistro {
+  id: string;
+  placa: string;
+  clase: ClaseVehiculo;
+  claseCola: ClaseCola;
+  estado: EstadoVehiculo;
+  asociadoId: string;
+  tipoCarroceria: string | null;
+  modelo: number | null;
+  repotenciacion: number | null;
+  largoMts: number | null;
+  kmRecorrido: number | null;
+  propietarioNombre: string | null;
+  propietarioDocumento: string | null;
+  parentesco: string | null;
+  trailerPlaca: string | null;
+  gpsProveedor: string | null;
+  noElegibleHasta: string | null;
+  eliminadoEn: string | null;
+}
+
+export interface TipoDocumento {
+  id: string;
+  codigo: string;
+  nombre: string;
+  aplicaA: 'vehiculo' | 'conductor';
+  bloqueante: boolean;
+  diasAlerta: number;
+}
+
+export interface VistaDocumento {
+  id: string;
+  sujetoTipo: 'vehiculo' | 'conductor';
+  sujetoId: string;
+  tipoId: string;
+  numero: string | null;
+  emitidoEn: string | null;
+  venceEn: string | null;
+  archivoUrl: string | null;
+  eliminadoEn: string | null;
+  tipo: TipoDocumento | null;
+  estado: EstadoDocumento;
+  diasParaVencer: number | null;
+}
+
+export interface VistaHabilitacion {
+  id: string;
+  vehiculoId: string;
+  clienteId: string;
+  apto: boolean;
+  motivoBloqueo: string | null;
+  cliente: string | null;
+  clienteNombre: string | null;
+}
+
+export interface VistaConductorFicha {
+  id: string;
+  nombres: string;
+  documento: string;
+  celular: string | null;
+  correo: string | null;
+  licenciaCategoria: string | null;
+  licenciaVence: string | null;
+  esPrincipal: boolean;
+}
+
+export interface VistaFicha {
+  vehiculo: VistaVehiculoRegistro;
+  asociado: VistaAsociado | null;
+  conductores: VistaConductorFicha[];
+  documentos: VistaDocumento[];
+  habilitaciones: VistaHabilitacion[];
+  semaforo: EstadoDocumento;
+  enCola: MiPosicion | null;
+}
+
+export interface SemaforoPlaca {
+  id: string;
+  placa: string;
+  clase: ClaseVehiculo;
+  claseCola: ClaseCola;
+  estado: EstadoVehiculo;
+  asociadoNombre: string | null;
+  semaforo: EstadoDocumento;
+  vencidos: number;
+  porVencer: number;
+}
+
+/** Evento de auditoría de `cola.override` / `cola.reset` (`GET /colas/:clase/intervenciones`). */
+export interface Intervencion {
+  id: string;
+  at: string;
+  actorId: string;
+  actorRol: string;
+  accion: string;
+  entidad: string;
+  entidadId: string;
+  before: unknown;
+  after: { motivo?: string; vehiculoId?: string; posicion?: number; orden?: string[] } | null;
+}
+
+// --- Viajes y recaudos (TASK-0027, spec §6.5, §9.2 Finance) ---------------------------------------
+
+export interface Transportadora {
+  id: string;
+  nombre: string;
+  activo: boolean;
+}
+
+export interface TarifaSugerida {
+  id: string;
+  modalidad: string;
+  valor: number;
+}
+
+export interface VistaRecaudo {
+  id: string;
+  viajeId: string;
+  asociadoId: string;
+  valor: number;
+  estado: EstadoRecaudo;
+  fechaPago: string | null;
+  referencia: string | null;
+  trCodigo: string;
+  placa: string;
+  asociadoNombre: string | null;
+  asociadoDocumento: string | null;
+  flete: number | null;
+  valorPagado: number;
+  mes: string;
+}
+
+export interface VistaViaje {
+  id: string;
+  trId: string;
+  trCodigo: string;
+  trEstado: EstadoTr;
+  fechaAsignacion: string;
+  placa: string;
+  clase: ClaseVehiculo;
+  etiqueta: string;
+  cliente: string | null;
+  destino: string | null;
+  asociadoNombre: string | null;
+  asociadoDocumento: string | null;
+  conductorId: string | null;
+  conductor: string | null;
+  transportadoraId: string | null;
+  transportadora: string | null;
+  fechaCargue: string | null;
+  fechaDescargue: string | null;
+  lugarDescargue: string | null;
+  flete: number | null;
+  porcentajeAplicado: number | null;
+  valorRecaudo: number | null;
+  valorPagado: number;
+  estado: EstadoViaje;
+  notas: string | null;
+  mes: string;
+}
+
+export interface DetalleViaje extends VistaViaje {
+  tarifasSugeridas: TarifaSugerida[];
+  recaudo: VistaRecaudo | null;
+}
+
+export interface ResumenMes {
+  mes: string;
+  porcentajeVigente: number;
+  viajes: number;
+  liquidados: number;
+  flete: number;
+  recaudo: number;
+  pagado: number;
+  pendiente: number;
+  porCliente: Array<{ cliente: string; viajes: number; flete: number; recaudo: number }>;
+  porPlaca: Array<{
+    placa: string;
+    asociado: string | null;
+    viajes: number;
+    flete: number;
+    recaudo: number;
+    pagado: number;
+  }>;
+}
+
+/** `GET /documentos/alertas` (TASK-0028): documentos vencidos o por vencer, del más urgente al menos. */
+export interface AlertaDocumento extends VistaDocumento {
+  placa: string | null;
+  conductor: string | null;
+  sujeto: string;
 }

@@ -3,7 +3,8 @@ import type { Sesion } from '../api/tipos';
 
 export interface ContextoSesion {
   sesion: Sesion | null;
-  iniciar(email: string, password: string): Promise<Sesion>;
+  /** Guarda la sesión emitida por cualquiera de los flujos de acceso. */
+  establecer(sesion: Sesion): void;
   cerrar(): Promise<void>;
 }
 

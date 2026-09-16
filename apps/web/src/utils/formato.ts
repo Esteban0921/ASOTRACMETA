@@ -25,7 +25,62 @@ const MENSAJES: Record<string, string> = {
   VALIDATION_ERROR: 'Datos inválidos.',
   RATE_LIMITED: 'Demasiados intentos. Espera un minuto.',
   NETWORK: 'Sin conexión con el servidor.',
+  CODIGO_INVALIDO: 'El código o el enlace no es válido, ya se usó o venció.',
+  CHALLENGE_INVALIDO: 'La verificación caducó. Vuelve a empezar.',
+  DEMASIADOS_INTENTOS: 'Demasiados intentos. Pide un código nuevo.',
+  REAUTH_REQUERIDA: 'Confirma tu identidad de nuevo para esta acción.',
+  TOTP_NO_ENROLADO: 'Tu segundo factor no está configurado.',
+  EMAIL_EN_USO: 'Ya existe un usuario con ese correo.',
+  NOT_FOUND: 'No se encontró el registro.',
+  VIAJE_YA_EXISTE: 'Ese TR ya tiene viaje.',
+  VIAJE_LIQUIDADO: 'El viaje ya está liquidado: el flete no cambia y no se anula con pagos.',
+  VIAJE_ANULADO: 'El viaje está anulado.',
+  VIAJE_NO_LIQUIDABLE: 'Fija el flete acordado antes de liquidar.',
+  TR_NO_VIAJABLE: 'Un TR cancelado o no tramitado no genera viaje.',
+  RECAUDO_CERRADO: 'El recaudo ya está pagado o castigado.',
+  PAGO_INVALIDO: 'El pago supera lo pendiente del recaudo.',
 };
+
+const ROLES_TEXTO: Record<string, string> = {
+  superadmin: 'Superadministrador',
+  admin_ops: 'Coordinación (ops)',
+  admin_hseq: 'Flota / HSEQ',
+  admin_finance: 'Comercial / tesorería',
+  viewer: 'Consulta / veedor',
+  member: 'Asociado / conductor',
+};
+
+export function textoRol(rol: string): string {
+  return ROLES_TEXTO[rol] ?? rol;
+}
+
+const ESTADOS_DOCUMENTO_TEXTO: Record<string, string> = {
+  vigente: 'Vigente',
+  por_vencer: 'Por vencer',
+  vencido: 'Vencido',
+};
+
+export function textoEstadoDocumento(estado: string): string {
+  return ESTADOS_DOCUMENTO_TEXTO[estado] ?? estado;
+}
+
+/** Semáforo HSEQ (spec §9.2): verde vigente, ámbar por vencer, rojo vencido. */
+export function tonoSemaforo(estado: string): TonoEstado {
+  if (estado === 'vencido') return 'rojo';
+  if (estado === 'por_vencer') return 'ambar';
+  return 'verde';
+}
+
+const ESTADOS_VEHICULO_TEXTO: Record<string, string> = {
+  activo: 'Activo',
+  inactivo: 'Inactivo',
+  bloqueado_hseq: 'Bloqueado por HSEQ',
+  vendido: 'Vendido',
+};
+
+export function textoEstadoVehiculo(estado: string): string {
+  return ESTADOS_VEHICULO_TEXTO[estado] ?? estado;
+}
 
 /** El código es estable; la traducción vive aquí (spec §8.6). */
 export function traducirError(codigo: string): string {
@@ -45,6 +100,15 @@ const ELEGIBILIDAD: Record<string, string> = {
 export function textoElegibilidad(motivo: string | null): string {
   if (!motivo) return 'Elegible';
   return ELEGIBILIDAD[motivo] ?? motivo;
+}
+
+const INTERVENCIONES: Record<string, string> = {
+  'cola.override': 'Override',
+  'cola.reset': 'Reset de cola',
+};
+
+export function textoIntervencion(accion: string): string {
+  return INTERVENCIONES[accion] ?? accion;
 }
 
 export type TonoEstado = 'ambar' | 'verde' | 'rojo' | 'gris';
@@ -76,4 +140,66 @@ export function formatearFechaHora(iso: string): string {
     dateStyle: 'short',
     timeStyle: 'short',
   }).format(new Date(iso));
+}
+
+const ESTADOS_VIAJE_TEXTO: Record<string, string> = {
+  borrador: 'Borrador',
+  cargado: 'Cargado',
+  descargado: 'Descargado',
+  liquidado: 'Liquidado',
+  anulado: 'Anulado',
+};
+
+export function textoEstadoViaje(estado: string): string {
+  return ESTADOS_VIAJE_TEXTO[estado] ?? estado;
+}
+
+const ESTADOS_RECAUDO_TEXTO: Record<string, string> = {
+  pendiente: 'Pendiente',
+  parcial: 'Pago parcial',
+  pagado: 'Pagado',
+  cruzado: 'Cruzado',
+  castigado: 'Castigado',
+};
+
+export function textoEstadoRecaudo(estado: string): string {
+  return ESTADOS_RECAUDO_TEXTO[estado] ?? estado;
+}
+
+/** Verde liquidado/pagado, ámbar en curso o pago parcial, rojo anulado/castigado, gris borrador. */
+export function tonoViaje(estado: string): TonoEstado {
+  switch (estado) {
+    case 'liquidado':
+    case 'pagado':
+      return 'verde';
+    case 'cargado':
+    case 'descargado':
+    case 'pendiente':
+    case 'parcial':
+      return 'ambar';
+    case 'anulado':
+    case 'castigado':
+      return 'rojo';
+    default:
+      return 'gris';
+  }
+}
+
+const PESOS = new Intl.NumberFormat('es-CO', {
+  style: 'currency',
+  currency: 'COP',
+  maximumFractionDigits: 0,
+});
+
+export function formatearPesos(valor: number | null | undefined): string {
+  return valor === null || valor === undefined ? '—' : PESOS.format(valor);
+}
+
+/** `YYYY-MM` de hoy en la zona de la operación (America/Bogota). */
+export function mesActual(ahora: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Bogota',
+    year: 'numeric',
+    month: '2-digit',
+  }).format(ahora);
 }

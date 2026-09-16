@@ -88,8 +88,8 @@ códigos en las rutas ni en la UI.
 
 **RULE-014 — Invariantes de cola.** Posiciones `1..N` densas por clase, una placa activa en una
 sola clase, cabeza elegible = menor posición que pasa filtros. Toda escritura de posiciones pasa por
-`verificarInvariantesCola`. Reordenar "a mano" requiere acción de dominio auditada
-(`cola.override`, TASK-0024), nunca un UPDATE.
+`verificarInvariantesCola`. Reordenar "a mano" es una acción de dominio auditada con motivo y
+re-autenticación (`cola.override`, `cola.reset`), visible para el veedor, nunca un UPDATE.
 
 **RULE-015 — Identificadores.** IDs internos UUID v7. Códigos de negocio (`TR-41946`, placa) son
 atributos únicos, no llaves primarias. El código TR lo genera la secuencia de `parametros`; si
@@ -129,8 +129,10 @@ commitea (`.env.example` sí). Claves de cifrado y `AUTH_SECRET` vienen del ento
 
 **RULE-022 — RBAC en la API y RLS en la base.** Toda ruta lleva `exigir(recurso, permiso)` y las
 rutas `own` filtran por `actor.vehiculoIds`. La base aplica Row Level Security con `app.rol` y
-`app.vehiculo_ids`. Un `member` que vea datos de una placa ajena es un incidente de seguridad: se
-abre `TASK` con prioridad `crítica` antes que cualquier otra cosa.
+`app.vehiculo_ids`; la API opera siempre como `asotracmet_app` (nunca como owner ni superusuario,
+que se saltan RLS) y las rutas leen a través del puerto `Consultas`, nunca del almacén directamente.
+Un `member` que vea datos de una placa ajena es un incidente de seguridad: se abre `TASK` con
+prioridad `crítica` antes que cualquier otra cosa.
 
 **RULE-023 — Endpoints de prueba.** `/api/v1/__e2e/*` y cualquier atajo de test se registran solo
 cuando `modoE2e` está activo (`--e2e` o `ASOTRACMET_E2E=1`). Jamás en producción.

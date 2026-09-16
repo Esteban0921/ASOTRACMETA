@@ -94,21 +94,22 @@ describe.skipIf(!url)('migraciones Postgres (spec §6, §16 RLS)', () => {
       const cliente1 = await cliente.query<{ id: string }>(
         "select id from clientes where codigo = 'HLB'",
       );
+      // Placas inventadas: la base puede venir sembrada (TASK-0039) y este test no debe depender de eso.
       const vehiculos = await cliente.query<{ id: string; placa: string }>(
         `insert into vehiculos (placa, clase, clase_cola, asociado_id)
-         values ('SWI750', 'CBZ', 'TM-CBZ', $1), ('FST189', 'TM', 'TM-CBZ', $1) returning id, placa`,
+         values ('ZZA111', 'CBZ', 'TM-CBZ', $1), ('ZZB222', 'TM', 'TM-CBZ', $1) returning id, placa`,
         [asociado.rows[0]!.id],
       );
-      const swi750 = vehiculos.rows.find((v) => v.placa === 'SWI750')!;
-      const fst189 = vehiculos.rows.find((v) => v.placa === 'FST189')!;
+      const swi750 = vehiculos.rows.find((v) => v.placa === 'ZZA111')!;
+      const fst189 = vehiculos.rows.find((v) => v.placa === 'ZZB222')!;
       const requerimiento = await cliente.query<{ id: string }>(
         `insert into requerimientos (cliente_id, clase_cola, fecha_servicio, creado_por)
          values ($1, 'TM-CBZ', current_date, $2) returning id`,
         [cliente1.rows[0]!.id, usuario.rows[0]!.id],
       );
       for (const [codigo, vehiculo] of [
-        ['TR-1', swi750.id],
-        ['TR-2', fst189.id],
+        ['TR-9000001', swi750.id],
+        ['TR-9000002', fst189.id],
       ] as const) {
         await cliente.query(
           `insert into trs (codigo, requerimiento_id, vehiculo_id, clase_cola, cliente_id, fecha_asignacion)
@@ -122,23 +123,23 @@ describe.skipIf(!url)('migraciones Postgres (spec §6, §16 RLS)', () => {
       await cliente.query("select set_config('app.rol', 'member', true)");
       await cliente.query("select set_config('app.vehiculo_ids', $1, true)", [swi750.id]);
       const visibles = await cliente.query<{ codigo: string }>(
-        'select codigo from trs order by codigo',
+        "select codigo from trs where codigo like 'TR-90000%' order by codigo",
       );
-      expect(visibles.rows.map((r) => r.codigo)).toEqual(['TR-1']);
+      expect(visibles.rows.map((r) => r.codigo)).toEqual(['TR-9000001']);
 
       // Un member no inserta TR directamente.
       await cliente.query('savepoint s2');
       await expect(
         cliente.query(
           `insert into trs (codigo, requerimiento_id, vehiculo_id, clase_cola, cliente_id, fecha_asignacion)
-           values ('TR-3', $1, $2, 'TM-CBZ', $3, current_date)`,
+           values ('TR-9000003', $1, $2, 'TM-CBZ', $3, current_date)`,
           [requerimiento.rows[0]!.id, swi750.id, cliente1.rows[0]!.id],
         ),
       ).rejects.toThrow(/row-level security/);
       await cliente.query('rollback to savepoint s2');
 
       await cliente.query("select set_config('app.rol', 'admin_ops', true)");
-      const todos = await cliente.query('select codigo from trs');
+      const todos = await cliente.query("select codigo from trs where codigo like 'TR-90000%'");
       expect(todos.rowCount).toBe(2);
     } finally {
       await cliente.query('rollback');
@@ -153,12 +154,14 @@ describe.skipIf(!url)('migraciones Postgres (spec §6, §16 RLS)', () => {
       );
       const vehiculos = await cliente.query<{ id: string }>(
         `insert into vehiculos (placa, clase, clase_cola, asociado_id)
-         values ('AAA111', 'TM', 'TM-CBZ', $1), ('BBB222', 'TM', 'TM-CBZ', $1) returning id`,
+         values ('ZZD444', 'MM', 'MM', $1), ('ZZE555', 'MM', 'MM', $1) returning id`,
         [asociado.rows[0]!.id],
       );
       const [a, b] = vehiculos.rows;
+      // La clase puede venir sembrada: se vacía dentro de la transacción, que luego se revierte.
+      await cliente.query("delete from cola_posiciones where clase_cola = 'MM'");
       await cliente.query(
-        "insert into cola_posiciones (clase_cola, vehiculo_id, posicion) values ('TM-CBZ', $1, 1), ('TM-CBZ', $2, 2)",
+        "insert into cola_posiciones (clase_cola, vehiculo_id, posicion) values ('MM', $1, 1), ('MM', $2, 2)",
         [a!.id, b!.id],
       );
       // Rotar A al final: B pasa a 1 y A a 2 sin violar la unicidad intermedia.
@@ -169,7 +172,7 @@ describe.skipIf(!url)('migraciones Postgres (spec §6, §16 RLS)', () => {
         a!.id,
       ]);
       const { rows } = await cliente.query<{ posicion: number }>(
-        "select posicion from cola_posiciones where clase_cola = 'TM-CBZ' order by posicion",
+        "select posicion from cola_posiciones where clase_cola = 'MM' order by posicion",
       );
       expect(rows.map((r) => r.posicion)).toEqual([1, 2]);
     } finally {
@@ -182,7 +185,7 @@ describe.skipIf(!url)('migraciones Postgres (spec §6, §16 RLS)', () => {
     try {
       await expect(
         cliente.query(
-          "insert into vehiculos (placa, clase, clase_cola) values ('SUL 470', 'CBZ', 'TM-CBZ')",
+          "insert into vehiculos (placa, clase, clase_cola) values ('ZZF 666', 'CBZ', 'TM-CBZ')",
         ),
       ).rejects.toThrow(/vehiculos_placa_check/);
     } finally {
@@ -193,7 +196,7 @@ describe.skipIf(!url)('migraciones Postgres (spec §6, §16 RLS)', () => {
       // TM debe ir a la cola TM-CBZ; C100 es una clase de cola válida pero incoherente.
       await expect(
         cliente.query(
-          "insert into vehiculos (placa, clase, clase_cola) values ('SUL470', 'TM', 'C100')",
+          "insert into vehiculos (placa, clase, clase_cola) values ('ZZF666', 'TM', 'C100')",
         ),
       ).rejects.toThrow(/vehiculos_clase_cola_coherente/);
     } finally {

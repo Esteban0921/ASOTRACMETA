@@ -1,5 +1,6 @@
 # Infra local (fase producto). `docker compose -f infra/compose.yaml up -d`
 # Hoy la API corre con almacén en memoria; Postgres y Redis se usan para migraciones y el adaptador TASK-0017.
+# Puertos del host configurables (TASK-0042): ASOTRACMET_PG_PORT y ASOTRACMET_REDIS_PORT.
 services:
   postgres:
     image: postgres:16-alpine
@@ -8,7 +9,7 @@ services:
       POSTGRES_PASSWORD: asotracmet
       POSTGRES_DB: asotracmet
     ports:
-      - '5432:5432'
+      - '${ASOTRACMET_PG_PORT:-5432}:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -20,7 +21,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - '6379:6379'
+      - '${ASOTRACMET_REDIS_PORT:-6379}:6379'
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 5s

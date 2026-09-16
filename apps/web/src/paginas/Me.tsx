@@ -1,9 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api, codigoDeError } from '../api/cliente';
-import type { MiPosicion, MotivoDeclinacion, VistaOferta, VistaTr } from '../api/tipos';
+import type {
+  AlertaDocumento,
+  MiPosicion,
+  MotivoDeclinacion,
+  VistaOferta,
+  VistaTr,
+} from '../api/tipos';
 import { OfertaCard } from '../componentes/OfertaCard';
-import { textoPosicion, tonoEstado, traducirError } from '../utils/formato';
+import { textoPosicion, tonoEstado, tonoSemaforo, traducirError } from '../utils/formato';
 
 const REFRESCO_MS = 4_000;
 
@@ -30,6 +36,11 @@ export function Me() {
   const motivos = useQuery({
     queryKey: ['motivos-declinacion'],
     queryFn: () => api<MotivoDeclinacion[]>('/motivos-declinacion'),
+  });
+  // Semáforo de documentos propios, solo lectura (spec §9.2 Member: "SOAT vence en 12 días").
+  const alertas = useQuery({
+    queryKey: ['me', 'alertas'],
+    queryFn: () => api<AlertaDocumento[]>('/documentos/alertas'),
   });
 
   const invalidar = () => void queryClient.invalidateQueries({ queryKey: ['me'] });
@@ -92,6 +103,27 @@ export function Me() {
             onDeclinar={(motivoId, nota) => declinar.mutate({ id: o.id, motivoId, nota })}
           />
         ))}
+      </section>
+
+      <section className="card" data-testid="mis-documentos">
+        <h2>Mis documentos</h2>
+        {alertas.data?.length === 0 && <p className="detalle">Tus documentos están al día.</p>}
+        <ul className="lista">
+          {alertas.data?.map((a) => (
+            <li key={a.id} className="item" data-testid={`mi-documento-${a.tipo?.codigo ?? a.id}`}>
+              <span className={`badge ${tonoSemaforo(a.estado)}`}>
+                {a.estado === 'vencido'
+                  ? `Vencido hace ${Math.abs(a.diasParaVencer ?? 0)} d`
+                  : `Vence en ${a.diasParaVencer ?? 0} d`}
+              </span>{' '}
+              <strong>{a.placa ?? a.sujeto}</strong>{' '}
+              <span className="detalle">
+                {a.tipo?.nombre ?? 'Documento'}
+                {a.venceEn ? ` · vence ${a.venceEn}` : ''}
+              </span>
+            </li>
+          ))}
+        </ul>
       </section>
 
       <section className="card" data-testid="mis-trs">

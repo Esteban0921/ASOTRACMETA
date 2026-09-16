@@ -5,8 +5,20 @@ import { httpStatusDe, type ErrorApi } from '@asotracmet/shared';
 
 // Contrato de error (spec §8.6): { code, message, details }. El código es estable.
 
-export function registrarManejoErrores(app: FastifyInstance): void {
-  app.setNotFoundHandler((_req: FastifyRequest, reply: FastifyReply) => {
+export interface OpcionesErrores {
+  /**
+   * Con la web servida por la API (producción, TASK-0032), cualquier GET fuera de `/api/` que no
+   * sea un archivo devuelve `index.html`: el router de React resuelve la ruta.
+   */
+  spaIndex?: boolean;
+}
+
+export function registrarManejoErrores(app: FastifyInstance, opciones: OpcionesErrores = {}): void {
+  app.setNotFoundHandler((req: FastifyRequest, reply: FastifyReply) => {
+    if (opciones.spaIndex && req.method === 'GET' && !req.url.startsWith('/api/')) {
+      void reply.type('text/html; charset=utf-8').sendFile('index.html');
+      return;
+    }
     const cuerpo: ErrorApi = { code: 'NOT_FOUND', message: 'Recurso no encontrado' };
     void reply.status(404).send(cuerpo);
   });

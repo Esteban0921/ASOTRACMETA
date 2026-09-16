@@ -6,3 +6,7 @@ export * from './placa.js';
 export * from './pii.js';
 export * from './fechas.js';
 export * from './schemas.js';
+export * from './schemas-maestros.js';
+export * from './schemas-viajes.js';
+export * from './recaudo.js';
+export * from './documentos.js';

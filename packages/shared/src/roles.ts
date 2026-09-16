@@ -212,6 +212,14 @@ export const DURACION_SESION_HORAS: Readonly<Record<Rol, number>> = {
   member: 24 * 7,
 };
 
+/**
+ * Spec §3.3: correo + OTP, o contraseña + 2FA, para cualquier rol que no sea `member`.
+ * `member` entra con enlace mágico de un solo uso.
+ */
+export function requiere2fa(rol: Rol): boolean {
+  return rol !== 'member';
+}
+
 export function concesionDe(rol: Rol, recurso: Recurso): Concesion {
   return MATRIZ_RBAC[recurso][rol];
 }

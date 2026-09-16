@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ErrorDominio } from './errores.js';
-import { OPS, crearEscenario } from './escenario.test-util.js';
+import { OPS, SUPER, crearEscenario } from './escenario.test-util.js';
 import { moverACabeza } from './invariantes.js';
 
 async function codigoDe(promesa: Promise<unknown>): Promise<string | undefined> {
@@ -453,5 +453,242 @@ describe('MotorCola · snapshotCola', () => {
     });
     expect(snapshot[1]?.elegibilidad.elegible).toBe(true);
     expect(snapshot[1]?.asociado?.nombres).toBe('ASOCIADO 02');
+  });
+});
+
+describe('MotorCola · override y reset (spec §7.1.5, §9.2, §13.3, §21)', () => {
+  const ORDEN_INICIAL = ['SPS413', 'FST189', 'SWI750', 'QOR007', 'SOF336', 'SUL470'];
+
+  it('override lleva una placa a la posición indicada, con motivo y rastro auditado', async () => {
+    const e = crearEscenario();
+    const despues = await e.motor.override({
+      claseCola: 'TM-CBZ',
+      vehiculoId: 'v-SUL470',
+      posicion: 1,
+      motivo: 'Acuerdo de asamblea del 15 de septiembre',
+      actor: SUPER,
+    });
+    expect(e.placasEnOrden()).toEqual(['SUL470', 'SPS413', 'FST189', 'SWI750', 'QOR007', 'SOF336']);
+    expect(despues.map((p) => p.posicion)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(e.posiciones()[0]?.version).toBe(2);
+    const evento = e.estado.auditoria.at(-1);
+    expect(evento).toMatchObject({
+      accion: 'cola.override',
+      entidad: 'cola',
+      entidadId: 'TM-CBZ',
+      actorId: 'u-super',
+    });
+    expect((evento?.after as { motivo: string; posicion: number }).motivo).toBe(
+      'Acuerdo de asamblea del 15 de septiembre',
+    );
+    expect((evento?.before as { cola: unknown[] }).cola).toHaveLength(6);
+
+    await e.motor.override({
+      claseCola: 'TM-CBZ',
+      vehiculoId: 'v-SUL470',
+      posicion: 6,
+      motivo: 'Deshacer el movimiento anterior',
+      actor: SUPER,
+    });
+    expect(e.placasEnOrden()).toEqual(ORDEN_INICIAL);
+  });
+
+  it('override valida posición, motivo y placa, sin tocar la cola', async () => {
+    const e = crearEscenario();
+    const base = {
+      claseCola: 'TM-CBZ' as const,
+      vehiculoId: 'v-SUL470',
+      motivo: 'motivo válido',
+      actor: SUPER,
+    };
+    expect(await codigoDe(e.motor.override({ ...base, posicion: 0 }))).toBe('VALIDATION_ERROR');
+    expect(await codigoDe(e.motor.override({ ...base, posicion: 7 }))).toBe('VALIDATION_ERROR');
+    expect(await codigoDe(e.motor.override({ ...base, posicion: 2, motivo: '   ' }))).toBe(
+      'MOTIVO_REQUERIDO',
+    );
+    expect(
+      await codigoDe(e.motor.override({ ...base, vehiculoId: 'v-NOEXISTE', posicion: 2 })),
+    ).toBe('NOT_FOUND');
+    expect(e.placasEnOrden()).toEqual(ORDEN_INICIAL);
+    expect(e.estado.auditoria).toHaveLength(0);
+  });
+
+  it('reset deja la cola con exactamente los vehículos activos de la clase, en el orden dado y con contadores a cero', async () => {
+    const e = crearEscenario({ cupos: 1 });
+    // Historia previa: un turno tomado (rota y cuenta), una placa inactiva y una placa nueva fuera de la cola.
+    const oferta = await e.motor.ofrecer({ requerimientoId: 'req-1', actor: OPS });
+    await e.motor.aceptar({ ofertaId: oferta.id, actor: OPS });
+    e.vehiculoPorPlaca('SPS413').estado = 'inactivo';
+    e.estado.vehiculos.push({
+      id: 'v-NUEVA',
+      placa: 'ZZZ999',
+      clase: 'TM',
+      claseCola: 'TM-CBZ',
+      asociadoId: 'a-05',
+      estado: 'activo',
+      noElegibleHasta: null,
+    });
+
+    const despues = await e.motor.resetCola({
+      claseCola: 'TM-CBZ',
+      orden: ['v-SUL470', 'v-FST189'],
+      motivo: 'Nueva ronda acordada en asamblea',
+      actor: SUPER,
+    });
+    expect(e.placasEnOrden()).toEqual(['SUL470', 'FST189', 'QOR007', 'SOF336', 'SWI750', 'ZZZ999']);
+    expect(despues.map((p) => p.posicion)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(
+      despues.every(
+        (p) =>
+          p.ciclo === 1 &&
+          p.turnosTomados === 0 &&
+          p.turnosOfrecidos === 0 &&
+          p.saltosPendientes === 0,
+      ),
+    ).toBe(true);
+    const evento = e.estado.auditoria.at(-1);
+    expect(evento).toMatchObject({ accion: 'cola.reset', entidad: 'cola', entidadId: 'TM-CBZ' });
+    // El "antes" conserva la historia (contadores incluidos): el reset no borra nada.
+    expect(
+      (evento?.before as { cola: unknown[]; contadores: Array<{ turnosTomados: number }> }).cola,
+    ).toHaveLength(6);
+    expect(
+      (
+        evento?.before as { contadores: Array<{ vehiculoId: string; turnosTomados: number }> }
+      ).contadores.find((c) => c.vehiculoId === 'v-FST189')?.turnosTomados,
+    ).toBe(1);
+    expect(evento?.after).toMatchObject({
+      motivo: 'Nueva ronda acordada en asamblea',
+      orden: ['v-SUL470', 'v-FST189'],
+    });
+  });
+
+  it('reset rechaza un orden con placas repetidas, ajenas o inactivas y exige motivo', async () => {
+    const e = crearEscenario();
+    e.vehiculoPorPlaca('SPS413').estado = 'inactivo';
+    const base = { claseCola: 'TM-CBZ' as const, motivo: 'motivo válido', actor: SUPER };
+    expect(await codigoDe(e.motor.resetCola({ ...base, orden: ['v-SUL470', 'v-SUL470'] }))).toBe(
+      'VALIDATION_ERROR',
+    );
+    expect(await codigoDe(e.motor.resetCola({ ...base, orden: ['v-NOEXISTE'] }))).toBe(
+      'VALIDATION_ERROR',
+    );
+    expect(await codigoDe(e.motor.resetCola({ ...base, orden: ['v-SPS413'] }))).toBe(
+      'VALIDATION_ERROR',
+    );
+    expect(await codigoDe(e.motor.resetCola({ ...base, motivo: '' }))).toBe('MOTIVO_REQUERIDO');
+    expect(e.placasEnOrden()).toEqual(ORDEN_INICIAL);
+  });
+
+  it('override y reset respetan el lock de la clase', async () => {
+    const e = crearEscenario();
+    const [a, b] = await Promise.allSettled([
+      e.motor.resetCola({ claseCola: 'TM-CBZ', motivo: 'ronda nueva', actor: SUPER }),
+      e.motor.override({
+        claseCola: 'TM-CBZ',
+        vehiculoId: 'v-SUL470',
+        posicion: 1,
+        motivo: 'x y z',
+        actor: SUPER,
+      }),
+    ]);
+    expect(a.status).toBe('fulfilled');
+    expect(b.status === 'rejected' && b.reason instanceof ErrorDominio && b.reason.code).toBe(
+      'COLA_LOCKED',
+    );
+  });
+});
+
+describe('MotorCola · la cola sigue a los vehículos activos (spec §7.1.2, §13.3)', () => {
+  const HSEQ = { id: 'u-hseq', rol: 'admin_hseq' as const };
+
+  it('una placa nueva activa entra al final; retirada, sale y sus ofertas abiertas se anulan', async () => {
+    const e = crearEscenario();
+    e.estado.vehiculos.push({
+      id: 'v-NUEVA',
+      placa: 'ZZA111',
+      clase: 'TM',
+      claseCola: 'TM-CBZ',
+      asociadoId: 'a-01',
+      estado: 'activo',
+      noElegibleHasta: null,
+    });
+    e.estado.habilitaciones.push({
+      vehiculoId: 'v-NUEVA',
+      clienteId: 'c-hlb',
+      apto: true,
+      motivoBloqueo: null,
+    });
+
+    const alta = await e.motor.sincronizarVehiculoEnCola({
+      vehiculoId: 'v-NUEVA',
+      motivo: 'alta de placa',
+      actor: HSEQ,
+    });
+    expect(alta).toEqual([{ claseCola: 'TM-CBZ', accion: 'incorporado' }]);
+    expect(e.placasEnOrden()).toEqual([
+      'SPS413',
+      'FST189',
+      'SWI750',
+      'QOR007',
+      'SOF336',
+      'SUL470',
+      'ZZA111',
+    ]);
+    expect(e.posiciones().map((p) => p.posicion)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(
+      await e.motor.sincronizarVehiculoEnCola({
+        vehiculoId: 'v-NUEVA',
+        motivo: 'repetido',
+        actor: HSEQ,
+      }),
+    ).toEqual([]);
+
+    // Le llega una oferta y luego la placa se retira: la oferta no puede quedar viva.
+    for (const v of e.estado.vehiculos) if (v.id !== 'v-NUEVA') v.estado = 'inactivo';
+    const oferta = await e.motor.ofrecer({ requerimientoId: 'req-1', actor: OPS });
+    expect(oferta.vehiculoId).toBe('v-NUEVA');
+    e.vehiculoPorPlaca('ZZA111').estado = 'vendido';
+    const baja = await e.motor.sincronizarVehiculoEnCola({
+      vehiculoId: 'v-NUEVA',
+      motivo: 'vendida',
+      actor: HSEQ,
+    });
+    expect(baja).toEqual([{ claseCola: 'TM-CBZ', accion: 'retirado' }]);
+    expect(e.placasEnOrden()).not.toContain('ZZA111');
+    expect(e.estado.ofertas.find((o) => o.id === oferta.id)?.estado).toBe('anulada');
+    const acciones = e.estado.auditoria.map((a) => a.accion);
+    expect(acciones).toEqual(
+      expect.arrayContaining(['cola.incorporar', 'oferta.anular', 'cola.retirar']),
+    );
+  });
+
+  it('bloqueada por HSEQ conserva su posición; al cambiar de clase se mueve al final de la otra cola', async () => {
+    const e = crearEscenario();
+    e.vehiculoPorPlaca('FST189').estado = 'bloqueado_hseq';
+    expect(
+      await e.motor.sincronizarVehiculoEnCola({
+        vehiculoId: 'v-FST189',
+        motivo: 'SOAT vencido',
+        actor: HSEQ,
+      }),
+    ).toEqual([]);
+    expect(e.placasEnOrden()[1]).toBe('FST189');
+
+    const sul470 = e.vehiculoPorPlaca('SUL470');
+    sul470.clase = 'C100';
+    sul470.claseCola = 'C100';
+    const cambio = await e.motor.sincronizarVehiculoEnCola({
+      vehiculoId: 'v-SUL470',
+      motivo: 'cambio de clase',
+      actor: HSEQ,
+    });
+    expect(cambio).toEqual([
+      { claseCola: 'C100', accion: 'incorporado' },
+      { claseCola: 'TM-CBZ', accion: 'retirado' },
+    ]);
+    expect(e.placasEnOrden()).toEqual(['SPS413', 'FST189', 'SWI750', 'QOR007', 'SOF336']);
+    const c100 = e.estado.posiciones.filter((p) => p.claseCola === 'C100');
+    expect(c100.map((p) => [p.vehiculoId, p.posicion])).toEqual([['v-SUL470', 1]]);
   });
 });

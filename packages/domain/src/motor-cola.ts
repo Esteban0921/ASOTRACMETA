@@ -1,4 +1,5 @@
 import {
+  CLASES_COLA,
   ESTADOS_TR_ACTIVOS,
   fechaLocal,
   sumarHoras,
@@ -11,6 +12,8 @@ import { ErrorDominio } from './errores.js';
 import {
   actualizarPosicion,
   moverACabeza,
+  moverAPosicion,
+  renumerar,
   rotarAlFinal,
   verificarInvariantesCola,
 } from './invariantes.js';
@@ -387,6 +390,212 @@ export class MotorCola {
       await tx.guardarTr(actualizado);
       await tx.auditar(this.evento(input.actor, 'tr.no_tramitar', 'trs', tr, actualizado));
       return actualizado;
+    });
+  }
+
+  /**
+   * `cola.override` (§7.1.5): "nadie pone a fulano de primero" sin acción de dominio, motivo y
+   * re-autenticación. Lleva la placa a la posición indicada y deja el antes y el después en audit,
+   * que el veedor puede ver (§21).
+   */
+  async override(input: {
+    claseCola: ClaseCola;
+    vehiculoId: string;
+    posicion: number;
+    motivo: string;
+    actor: Actor;
+  }): Promise<ColaPosicion[]> {
+    if (!input.motivo.trim()) throw new ErrorDominio('MOTIVO_REQUERIDO');
+    return this.uow.ejecutar(input.claseCola, async (tx) => {
+      const antes = await tx.posiciones(input.claseCola);
+      if (!antes.some((p) => p.vehiculoId === input.vehiculoId)) {
+        throw new ErrorDominio('NOT_FOUND', 'La placa no está en esa cola');
+      }
+      const despues = moverAPosicion(antes, input.vehiculoId, input.posicion);
+      await this.guardarCola(tx, input.claseCola, despues);
+      await tx.auditar({
+        actorId: input.actor.id,
+        actorRol: input.actor.rol,
+        accion: 'cola.override',
+        entidad: 'cola',
+        entidadId: input.claseCola,
+        before: { cola: this.resumenCola(antes) },
+        after: {
+          cola: this.resumenCola(despues),
+          vehiculoId: input.vehiculoId,
+          posicion: input.posicion,
+          motivo: input.motivo,
+        },
+      });
+      return despues;
+    });
+  }
+
+  /**
+   * Reset de cola por clase (§9.2): la cola vuelve a ser exactamente los vehículos activos de la
+   * clase (§13.3), en el orden dado y después por placa, con los contadores de ronda a cero.
+   * El estado anterior, contadores incluidos, queda en audit: el reset no borra historia.
+   */
+  async resetCola(input: {
+    claseCola: ClaseCola;
+    orden?: readonly string[];
+    motivo: string;
+    actor: Actor;
+  }): Promise<ColaPosicion[]> {
+    if (!input.motivo.trim()) throw new ErrorDominio('MOTIVO_REQUERIDO');
+    return this.uow.ejecutar(input.claseCola, async (tx) => {
+      const antes = await tx.posiciones(input.claseCola);
+      const activos = (await tx.vehiculosDeClase(input.claseCola)).filter(
+        (v) => v.estado === 'activo',
+      );
+      const porVehiculo = new Map(activos.map((v) => [v.id, v]));
+      const orden = input.orden ?? [];
+      const desconocidos = orden.filter((id) => !porVehiculo.has(id));
+      if (desconocidos.length > 0 || new Set(orden).size !== orden.length) {
+        throw new ErrorDominio(
+          'VALIDATION_ERROR',
+          'El orden incluye placas repetidas, inactivas o que no son de la clase',
+          { desconocidos },
+        );
+      }
+      const primero = orden.map((id) => porVehiculo.get(id)!);
+      const resto = activos
+        .filter((v) => !orden.includes(v.id))
+        .sort((a, b) => a.placa.localeCompare(b.placa));
+      const previas = new Map(antes.map((p) => [p.vehiculoId, p]));
+      const despues: ColaPosicion[] = [...primero, ...resto].map((v, indice) => ({
+        id: previas.get(v.id)?.id ?? this.ids.nuevo(),
+        claseCola: input.claseCola,
+        vehiculoId: v.id,
+        posicion: indice + 1,
+        ciclo: 1,
+        turnosOfrecidos: 0,
+        turnosTomados: 0,
+        saltosPendientes: 0,
+        version: (previas.get(v.id)?.version ?? 0) + 1,
+      }));
+      await this.guardarCola(tx, input.claseCola, despues);
+      await tx.auditar({
+        actorId: input.actor.id,
+        actorRol: input.actor.rol,
+        accion: 'cola.reset',
+        entidad: 'cola',
+        entidadId: input.claseCola,
+        before: {
+          cola: this.resumenCola(antes),
+          contadores: antes.map((p) => ({
+            vehiculoId: p.vehiculoId,
+            ciclo: p.ciclo,
+            turnosOfrecidos: p.turnosOfrecidos,
+            turnosTomados: p.turnosTomados,
+            saltosPendientes: p.saltosPendientes,
+          })),
+        },
+        after: { cola: this.resumenCola(despues), motivo: input.motivo, orden: [...orden] },
+      });
+      return despues;
+    });
+  }
+
+  /**
+   * Mantiene "la cola de cada clase = vehículos activos de esa clase" (§7.1.2, §13.3) cuando una
+   * placa nace, cambia de clase, se retira o vuelve. Entra siempre al final; al salir, sus ofertas
+   * abiertas se anulan. Es idempotente y cada movimiento queda en audit.
+   */
+  async sincronizarVehiculoEnCola(input: {
+    vehiculoId: string;
+    motivo: string;
+    actor: Actor;
+  }): Promise<Array<{ claseCola: ClaseCola; accion: 'incorporado' | 'retirado' }>> {
+    const vehiculo = await this.uow.leer((tx) => tx.vehiculo(input.vehiculoId));
+    if (!vehiculo) throw new ErrorDominio('NOT_FOUND', 'Vehículo no existe');
+    // `bloqueado_hseq` es temporal: conserva su posición y el filtro de elegibilidad lo salta.
+    const debeEstar = vehiculo.estado === 'activo' || vehiculo.estado === 'bloqueado_hseq';
+    const cambios: Array<{ claseCola: ClaseCola; accion: 'incorporado' | 'retirado' }> = [];
+    for (const claseCola of CLASES_COLA) {
+      const enClase = (await this.uow.leer((tx) => tx.posiciones(claseCola))).some(
+        (p) => p.vehiculoId === vehiculo.id,
+      );
+      const deberia = debeEstar && claseCola === vehiculo.claseCola;
+      if (enClase && !deberia) {
+        await this.retirarDeCola(claseCola, vehiculo.id, input.motivo, input.actor);
+        cambios.push({ claseCola, accion: 'retirado' });
+      } else if (!enClase && deberia) {
+        await this.incorporarACola(claseCola, vehiculo.id, input.motivo, input.actor);
+        cambios.push({ claseCola, accion: 'incorporado' });
+      }
+    }
+    return cambios;
+  }
+
+  private async incorporarACola(
+    claseCola: ClaseCola,
+    vehiculoId: string,
+    motivo: string,
+    actor: Actor,
+  ): Promise<void> {
+    await this.uow.ejecutar(claseCola, async (tx) => {
+      const antes = await tx.posiciones(claseCola);
+      if (antes.some((p) => p.vehiculoId === vehiculoId)) return;
+      const despues: ColaPosicion[] = [
+        ...antes,
+        {
+          id: this.ids.nuevo(),
+          claseCola,
+          vehiculoId,
+          posicion: antes.length + 1,
+          ciclo: 1,
+          turnosOfrecidos: 0,
+          turnosTomados: 0,
+          saltosPendientes: 0,
+          version: 1,
+        },
+      ];
+      await this.guardarCola(tx, claseCola, despues);
+      await tx.auditar({
+        actorId: actor.id,
+        actorRol: actor.rol,
+        accion: 'cola.incorporar',
+        entidad: 'cola',
+        entidadId: claseCola,
+        before: { cola: this.resumenCola(antes) },
+        after: { cola: this.resumenCola(despues), vehiculoId, motivo },
+      });
+    });
+  }
+
+  private async retirarDeCola(
+    claseCola: ClaseCola,
+    vehiculoId: string,
+    motivo: string,
+    actor: Actor,
+  ): Promise<void> {
+    await this.uow.ejecutar(claseCola, async (tx) => {
+      const antes = await tx.posiciones(claseCola);
+      if (!antes.some((p) => p.vehiculoId === vehiculoId)) return;
+      const despues = renumerar(antes.filter((p) => p.vehiculoId !== vehiculoId));
+      await this.guardarCola(tx, claseCola, despues);
+      const ahora = this.reloj.ahora().toISOString();
+      for (const oferta of await tx.ofertasAbiertasDeVehiculo(vehiculoId)) {
+        const anulada: Oferta = {
+          ...oferta,
+          estado: 'anulada',
+          nota: `Placa retirada de la cola: ${motivo}`,
+          respondidaEn: ahora,
+          respondidaPor: actor.id,
+        };
+        await tx.guardarOferta(anulada);
+        await tx.auditar(this.evento(actor, 'oferta.anular', 'ofertas', oferta, anulada));
+      }
+      await tx.auditar({
+        actorId: actor.id,
+        actorRol: actor.rol,
+        accion: 'cola.retirar',
+        entidad: 'cola',
+        entidadId: claseCola,
+        before: { cola: this.resumenCola(antes) },
+        after: { cola: this.resumenCola(despues), vehiculoId, motivo },
+      });
     });
   }
 

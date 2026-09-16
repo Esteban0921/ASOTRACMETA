@@ -1,6 +1,6 @@
 # ISSUES.md — Backlog de ASOTRACMET
 
-**Próximo ID: TASK-0038** · Reglas de este archivo: RULE-002 a RULE-007 en [AGENTS.md](AGENTS.md).
+**Próximo ID: TASK-0044** · Reglas de este archivo: RULE-002 a RULE-007 en [AGENTS.md](AGENTS.md).
 
 Estados: `pendiente` · `en_progreso` · `bloqueada` · `hecha` · `descartada`.
 Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable), 2 (viaje y plata),
@@ -28,20 +28,26 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 | TASK-0016 | Migraciones SQL (spec §6), runner y tests db (RLS, audit)     | 1    | alta      | hecha       |
 | TASK-0017 | CI GitHub Actions: check, e2e, db                             | 0    | alta      | en_progreso |
 | TASK-0018 | Documentación: ARCHITECTURE, AGENTS, ISSUES, README, ADR      | 0    | alta      | hecha       |
-| TASK-0019 | Adaptador Postgres de `Transaccion` / `UnidadDeTrabajo`       | 1    | crítica   | pendiente   |
+| TASK-0019 | Adaptador Postgres de `Transaccion` / `UnidadDeTrabajo`       | 1    | crítica   | hecha       |
+| TASK-0038 | Capa de consultas: la API deja de leer el estado en memoria   | 1    | crítica   | hecha       |
+| TASK-0039 | Seed de Postgres y `pnpm db:seed`                             | 1    | alta      | hecha       |
+| TASK-0040 | Anti-replay del código TOTP y límite de retos por usuario     | 1    | baja      | pendiente   |
+| TASK-0041 | Pantalla superadmin: parámetros y auditoría filtrable         | 1    | media     | pendiente   |
 | TASK-0020 | Lock Redis `cola:{clase}` con reintento                       | 1    | media     | pendiente   |
-| TASK-0021 | Auth producto: OTP, 2FA admin, magic link member, refresh     | 1    | alta      | pendiente   |
-| TASK-0022 | IAM: CRUD usuarios, roles y scope member                      | 1    | alta      | pendiente   |
-| TASK-0023 | Maestros: CRUD asociados, vehículos, conductores, catálogos   | 1    | alta      | pendiente   |
-| TASK-0024 | Reset y override de cola auditados (superadmin, 2FA)          | 1    | alta      | pendiente   |
-| TASK-0025 | Migración controlada desde el Excel + informe de excepciones  | 0-1  | alta      | pendiente   |
+| TASK-0021 | Auth producto: OTP, 2FA admin, magic link member, revocación  | 1    | alta      | hecha       |
+| TASK-0022 | IAM: CRUD usuarios, roles y scope member                      | 1    | alta      | hecha       |
+| TASK-0023 | Maestros: CRUD asociados, vehículos, conductores, catálogos   | 1    | alta      | hecha       |
+| TASK-0024 | Reset y override de cola auditados (superadmin, 2FA)          | 1    | alta      | hecha       |
+| TASK-0025 | Migración controlada desde el Excel + informe de excepciones  | 0-1  | alta      | hecha       |
+| TASK-0042 | Puertos del host configurables en `infra/compose.yaml`        | 0    | media     | hecha       |
+| TASK-0043 | Soportes HSEQ en object storage (subida de archivos)         | 3    | media     | pendiente   |
 | TASK-0026 | Notificaciones (in-app, email, WhatsApp opt-in) con outbox    | 1-2  | media     | pendiente   |
-| TASK-0027 | Viajes, tarifas, recaudo 3% y pantalla finance                | 2    | alta      | pendiente   |
-| TASK-0028 | HSEQ: documentos, semáforo, habilitaciones, job nocturno      | 3    | alta      | pendiente   |
+| TASK-0027 | Viajes, tarifas, recaudo 3% y pantalla finance                | 2    | alta      | hecha         |
+| TASK-0028 | HSEQ: documentos, semáforo, habilitaciones, job nocturno      | 3    | alta      | hecha         |
 | TASK-0029 | Tablero viewer y métricas de equidad (`metricas_mes`)         | 2    | media     | pendiente   |
 | TASK-0030 | Observabilidad: OpenTelemetry, métricas, readyz, runbooks     | 1-2  | media     | pendiente   |
 | TASK-0031 | PWA: service worker, instalable, lectura offline              | 1    | media     | pendiente   |
-| TASK-0032 | Build de producción de la API, Dockerfile y despliegue        | 1    | alta      | pendiente   |
+| TASK-0032 | Build de producción de la API, Dockerfile y despliegue        | 1    | alta      | hecha         |
 | TASK-0033 | Contrato OpenAPI desde Zod y tipos compartidos con la web     | 1    | baja      | pendiente   |
 | TASK-0034 | Export CSV por rol con watermark                              | 2    | baja      | pendiente   |
 | TASK-0035 | Staging anonimizado y simulacro de restore                    | 2    | media     | pendiente   |
@@ -281,23 +287,24 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 
 ### TASK-0019 — Adaptador Postgres de `Transaccion` / `UnidadDeTrabajo`
 
-- **Estado:** pendiente
+- **Estado:** hecha (2026-09-16)
 - **Fase:** 1
 - **Prioridad:** crítica
-- **Contexto:** Sustituir `AlmacenMemoria` en la API por un adaptador sobre `pg` (o Drizzle) que abra una transacción por acción, ejecute `set local role asotracmet_app`, `set local app.rol` y `set local app.vehiculo_ids`, tome `SELECT … FOR UPDATE NOWAIT` sobre `cola_posiciones` de la clase (→ `COLA_LOCKED`), inserte `audit_log` en la misma transacción y mapee los tipos del dominio. Los usuarios pasan a la tabla `usuarios`.
+- **Contexto:** `AlmacenPostgres` (`apps/api/src/persistencia/postgres.ts`) sobre `pg`: una transacción por acción con `set local role asotracmet_app`, `set_config` de `app.rol` / `app.vehiculo_ids` (contexto por `AsyncLocalStorage` fijado en el hook de auth), `pg_try_advisory_xact_lock('cola:<clase>')` + `select … for update nowait` (→ `COLA_LOCKED`), audit en la misma transacción, secuencia TR atómica con `jsonb_set`, mapeo de tipos del dominio y traducción de errores de Postgres a códigos estables. Escrituras del motor con rol de servicio y lecturas con el rol del actor (ADR-0005). `UsuariosPostgres` lee `usuarios` + `usuario_vehiculos`. Migración `0011` (`audit_log.actor_id` a texto, grant del rol de aplicación, `cola_total()`). Selección por `PERSISTENCIA=postgres`; el modo memoria sigue intacto para dev, unit y e2e.
 - **Criterio de done:**
-  - [ ] Los tests del motor y de la API pasan con el adaptador inyectado (mismo escenario)
-  - [ ] Test de concurrencia contra Postgres real: 20 paralelos → 1 + 19 `COLA_LOCKED`
-  - [ ] `readyz` reporta la DB
-- **Referencias:** spec §5.1, §5.3, §7.7; ARCHITECTURE §5.7, §8; ADR-0001, ADR-0002, ADR-0004; TASK-0016
-- **Evidencia:** —
+  - [x] La API completa pasa los criterios de la spec §20 con el adaptador inyectado (`infra/postgres/api-postgres.test.ts`, 10 tests)
+  - [x] Concurrencia contra Postgres real: con la clase bloqueada por otra transacción → 409 `COLA_LOCKED`; 20 coordinadores en paralelo sobre un cupo → una sola oferta
+  - [x] `readyz` reporta la DB
+  - [x] Los 92 tests unitarios y los 4 e2e siguen en verde sobre memoria
+- **Referencias:** spec §5.1, §5.3, §7.7; ARCHITECTURE §2.1, §5.7, §6.1, §8; ADR-0001, ADR-0002, ADR-0004, ADR-0005; TASK-0016, TASK-0038, TASK-0039
+- **Evidencia:** Postgres embebido 18 (UTF8) en la máquina de desarrollo: `pnpm db:migrate` → 11 aplicadas; `pnpm db:seed` → 10 asociados, 17 vehículos, 8 usuarios, 2 requerimientos; `pnpm test:db` → 2 archivos, 17 passed (2026-09-16). `pnpm check` en verde (92 unit) y `pnpm test:e2e` → 4 passed. El adaptador pasó sus 10 tests de API en la primera ejecución; los dos fallos de esa pasada eran tests de migraciones que asumían la base vacía y se hicieron independientes de la semilla.
 
 ### TASK-0020 — Lock Redis `cola:{clase}` con reintento
 
 - **Estado:** pendiente
 - **Fase:** 1
 - **Prioridad:** media
-- **Contexto:** Spec §7.7: lock distribuido además del row lock, con espera de 2 s y reintento en el cliente. Necesario solo con más de una instancia de API.
+- **Contexto:** Spec §7.7: lock distribuido además del advisory lock de Postgres (que ya cubre una sola base con varias instancias de API, porque vive en el servidor), con espera de 2 s y reintento en el cliente web. Prioridad baja mientras haya una sola base; el reintento en la UI sí aporta desde ya.
 - **Criterio de done:**
   - [ ] Lock con TTL y liberación segura; `COLA_LOCKED` estable
   - [ ] Runbook "cola trabada" actualizado
@@ -306,63 +313,119 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 
 ### TASK-0021 — Auth de producto
 
-- **Estado:** pendiente
+- **Estado:** hecha (2026-09-16)
 - **Fase:** 1
 - **Prioridad:** alta
-- **Contexto:** Spec §3.3 y §12: OTP por correo para todo rol no member, TOTP (2FA) para admin y superadmin, magic link al celular para member, refresh tokens con revocación (`refresh_tokens`, `otp_codes`), re-auth para borrar o resetear cola, cookies httpOnly + CSRF si se deja el bearer puro. Sustituye ADR-0003.
+- **Contexto:** Spec §3.3 y §12. `ServicioAuth` (`apps/api/src/auth/servicio.ts`): roles internos con contraseña + TOTP (RFC 6238, `totp.ts`, secreto cifrado AES-256-GCM en `usuarios.totp_secret_enc`, enrolamiento obligatorio en el primer acceso) o código de un solo uso por correo (10 min, cinco intentos); `member` con enlace mágico de un solo uso (15 min); sesiones opacas con hash en `sesiones` (migración `0012`), expiración por rol y revocación real en logout; `POST /auth/reauth` + guard `exigirReauth` para acciones sensibles; respuestas anti-enumeración; puerto `Mensajeria` (`consola` en dev, `memoria` en tests/e2e). Web: login en dos pasos y ruta `/entrar` para el enlace. El bearer se mantiene (sin cookies, sin CSRF); WhatsApp/SMS como canal real queda en TASK-0026. Sustituye ADR-0003.
 - **Criterio de done:**
-  - [ ] Login sin contraseña estática para member
-  - [ ] 2FA obligatorio para `admin_*` y `superadmin`
-  - [ ] Logout revoca; tests de API y e2e actualizados
-- **Referencias:** spec §3.3, §12; ADR-0003
+  - [x] Login sin contraseña estática para member (enlace mágico; la contraseña se rechaza)
+  - [x] 2FA obligatorio para todo rol interno (`admin_*`, `superadmin`, `viewer`) con contraseña; alternativa de código por correo
+  - [x] Logout revoca; sesiones expiran por rol; re-autenticación para acciones sensibles
+  - [x] Tests unitarios (TOTP con vectores del RFC, cifrado, tokens), de API (11 casos de acceso), sobre Postgres y e2e (3 flujos nuevos) en verde
+- **Referencias:** spec §3.3, §8.1, §12; ARCHITECTURE §6.2, §8, §9; ADR-0003
+- **Evidencia:** `pnpm check` → lint, formato, tipos y 108 tests unitarios en verde; `pnpm test:db` sobre Postgres embebido → 12 migraciones, semilla, 19 tests; `pnpm test:e2e` → 7 passed (2026-09-16). En el servidor de desarrollo, `POST /auth/login` sin contraseña responde `codigo_enviado` y el código sale por el log de la API.
+
+### TASK-0040 — Anti-replay del código TOTP y límite de retos por usuario
+
+- **Estado:** pendiente
+- **Fase:** 1
+- **Prioridad:** baja
+- **Contexto:** Descubierto al cerrar TASK-0021 (RULE-007). RFC 6238 recomienda no aceptar dos veces el mismo código dentro de su ventana; hoy un código válido podría reutilizarse durante ~90 s. También conviene limitar los retos de 2FA vivos por usuario para que un atacante con la contraseña no pueda pedir retos sin fin.
+- **Criterio de done:**
+  - [ ] Guardar el último paso TOTP aceptado por usuario y rechazar códigos de pasos ≤ al último
+  - [ ] Test: el mismo código no entra dos veces
+- **Referencias:** ARCHITECTURE §6.2; TASK-0021
 - **Evidencia:** —
 
 ### TASK-0022 — IAM: CRUD de usuarios, roles y scope member
 
-- **Estado:** pendiente
+- **Estado:** hecha (2026-09-16)
 - **Fase:** 1
 - **Prioridad:** alta
-- **Contexto:** Spec §8.2: `GET/POST/PATCH /usuarios`, `POST /usuarios/:id/roles` (solo superadmin), `POST /usuarios/:id/vehiculos` (scope member). Pantalla superadmin de usuarios y roles.
+- **Contexto:** Spec §8.2: `GET /usuarios`, `GET /usuarios/:id`, `POST /usuarios`, `PATCH /usuarios/:id`, `POST /usuarios/:id/roles` (solo superadmin, revoca sesiones y limpia placas al salir de `member`), `POST /usuarios/:id/vehiculos` (scope member, placas validadas). `RepositorioUsuarios` gana `listar`, `crear` y `actualizar` en memoria y Postgres (transacción con `usuario_vehiculos`). Reglas en la API: `member` sin contraseña, correo único (`EMAIL_EN_USO`), desactivar revoca sesiones, nadie se desactiva ni se cambia el rol a sí mismo; todo auditado sin secretos. Web: página `/admin/usuarios` (superadmin) con alta por rol, cambio de rol con confirmación, activar/desactivar y placas del asociado. La auditoría se escribe tras la escritura del usuario (dos operaciones; el repositorio de usuarios no forma parte de la transacción del dominio).
 - **Criterio de done:**
-  - [ ] Un rol primario por usuario; cambios auditados
-  - [ ] Test: solo superadmin cambia roles
-- **Referencias:** spec §3.1, §8.2, §9.2 Superadmin
-- **Evidencia:** —
+  - [x] Un rol primario por usuario; cambios auditados
+  - [x] Test: solo superadmin cambia roles (y crea); los admins solo leen; viewer nada
+  - [x] El usuario nuevo entra por su método (código por correo o enlace) y ve su scope
+- **Referencias:** spec §3.1, §3.3, §8.2, §9.2 Superadmin; ARCHITECTURE §6.4, §6.8, §7
+- **Evidencia:** `pnpm check` → 122 tests unitarios en verde (6 nuevos de IAM en la API); `pnpm test:db` sobre Postgres embebido → 13 migraciones, 21 tests (usuarios y placas persistidos, cambio de rol revoca); `pnpm test:e2e` → 9 passed, incluido "superadmin da de alta un asociado con placa y el asociado entra con su enlace" (2026-09-16).
 
 ### TASK-0023 — Maestros: CRUD
 
-- **Estado:** pendiente
+- **Estado:** hecha
 - **Fase:** 1
 - **Prioridad:** alta
 - **Contexto:** Spec §8.3: asociados, vehículos (placa normalizada, clase → clase_cola), conductores, clientes, destinos, transportadoras, tarifas con vigencia, `PUT /vehiculos/:id/habilitaciones/:clienteId`. Soft delete. Cifrado AES-GCM de `cuenta_bancaria_enc` con clave del entorno.
 - **Criterio de done:**
-  - [ ] Guards por rol según §3.2 (hseq CRUD flota; finance CRUD tarifas)
-  - [ ] Nunca `DELETE` físico con TR históricos
+  - [x] Guards por rol según §3.2 (hseq CRUD flota; finance CRUD tarifas)
+  - [x] Nunca `DELETE` físico con TR históricos
 - **Referencias:** spec §6.2-6.4, §8.3, §12
-- **Evidencia:** —
+- **Evidencia:** `rutas/maestros.ts` + `maestros/{tipos,memoria,postgres,vistas}.ts` + `schemas-maestros.ts` + pantalla `/hseq`. `pnpm check` (2026-09-16) → 146 passed: en `app.test.ts` el bloque «maestros» cubre alta de placa al final de su cola y baja lógica que conserva la ficha, cambio de estado/clase con motivo entre colas, SOAT vencido → no elegible → renovar → elegible, ficha (asociado, conductores, documentos, habilitaciones, posición) con viewer enmascarado y member solo lo suyo, documento único y cuenta bancaria que nunca sale, y «finance crea tarifas, ops solo actualiza, hseq no ve tarifas» (guards §3.2). E2E «HSEQ da de alta una placa…» en `e2e/enturnamiento.spec.ts`. Ningún DELETE físico: todas las bajas son `deleted_at`/`estado`.
 
 ### TASK-0024 — Reset y override de cola auditados
 
-- **Estado:** pendiente
+- **Estado:** hecha (2026-09-16)
 - **Fase:** 1
 - **Prioridad:** alta
-- **Contexto:** Spec §7.1.5 y §9.2: acción `cola.override` (mover una placa con motivo) y reset por clase (doble confirmación, 2FA, texto "RESETEAR"), ambas como acciones de dominio en el motor con audit visible para el veedor. Nunca un input numérico de posición.
+- **Contexto:** Spec §7.1.5, §9.2, §13.3 y §21. `MotorCola.override` (mover una placa a una posición, `moverAPosicion` con invariantes) y `MotorCola.resetCola` (la cola pasa a ser los vehículos activos de la clase, en el orden dado y luego por placa, contadores de ronda a cero; el antes queda en audit con contadores). Rutas `POST /colas/:clase/override` y `/reset` solo para superadmin con re-autenticación; el reset exige confirmación literal `RESETEAR` y, si `reset_cola_requiere_2fa`, que la re-autenticación haya sido con TOTP (`sesiones.reauth_factor`, migración `0013`). `GET /colas/:clase/intervenciones` expone esos eventos a todo el que ve la cola, veedor incluido. Web: página `/admin` (superadmin) y lista de intervenciones en la sala de turnos. Nunca un input numérico sobre `posicion`: la posición destino se elige de una lista dentro de una acción con motivo.
 - **Criterio de done:**
-  - [ ] Acciones en `MotorCola` con invariantes verificadas
-  - [ ] Visibles en `GET /audit` para viewer (la feature más política es el audit, §21)
-- **Referencias:** spec §7.1, §9.2, §21; AGENTS RULE-014
+  - [x] Acciones en `MotorCola` con invariantes verificadas (5 tests de dominio, incluido el lock de clase)
+  - [x] Visibles para viewer vía `GET /colas/:clase/intervenciones` (API y e2e)
+  - [x] Re-autenticación obligatoria; segundo factor obligatorio para reset según parámetro
+- **Referencias:** spec §7.1, §9.2, §10, §13.3, §21; ARCHITECTURE §5.5, §6.4, §7; AGENTS RULE-014; TASK-0021
+- **Evidencia:** `pnpm check` → 116 tests unitarios en verde; `pnpm test:db` sobre Postgres embebido → 13 migraciones, 20 tests; `pnpm test:e2e` → 8 passed, incluido "superadmin resetea la cola con motivo, confirmación y segundo factor; el veedor lo ve" (2026-09-16).
+
+### TASK-0041 — Pantalla superadmin: parámetros y auditoría filtrable
+
+- **Estado:** pendiente
+- **Fase:** 1
+- **Prioridad:** media
+- **Contexto:** Spec §9.2 Superadmin: editar parámetros de cola y recaudo desde la web (hoy solo por `PATCH /parametros`) y consultar la auditoría con filtros (entidad, id, acción). La API ya lo soporta; falta la pantalla en `/admin`.
+- **Criterio de done:**
+  - [ ] Formulario de parámetros con validación Zod compartida y confirmación
+  - [ ] Tabla de auditoría filtrable con before/after legibles
+  - [ ] e2e: cambiar `oferta_ttl_minutos` desde la web queda auditado
+- **Referencias:** spec §9.2, §10; ARCHITECTURE §7; TASK-0024
 - **Evidencia:** —
 
 ### TASK-0025 — Migración controlada desde el Excel
 
-- **Estado:** pendiente
+- **Estado:** hecha
 - **Fase:** 0-1
 - **Prioridad:** alta
-- **Contexto:** Spec §13: `scripts/migrate-xlsx.ts` repetible con dry-run e informe de excepciones (placas sin asociado, TR duplicados, `TR-` vacío, `DECLINO` vs `DECLINA`, destinos no canónicos). Decisiones de §13.2 firmadas antes de codificar. Nunca importa contraseñas.
+- **Contexto:** Spec §13. El Excel legado (`RECURSOS/control de enturnamiento.xlsx`, 17 hojas, fuera de git por contener PII y credenciales de GPS) es a la vez la fuente de los maestros reales y la evidencia del "método antiguo". `pnpm db:migrate-xlsx` (`scripts/migrate-xlsx.ts` sobre `infra/migracion/`) lo lee con `exceljs`, construye un plan puro (`modelo.ts`), lo carga en Postgres en una sola transacción (`cargar.ts`) y emite un informe de excepciones (`informe.ts`). Repetible (UUID v5 por llave de negocio), con `--dry-run` (rollback) y `--sin-db` (solo informe). Nunca lee las columnas de contraseña de GPS ni de correo. Decisiones de §13.2 tomadas y listadas en `docs/migracion-excel.md`: un asociado / N placas; `TM-CBZ` unificado; TR del SERV siempre sintéticos (`TR-1AAAAMMNNN`) porque las planillas `CONTROL TURNOS` no traen placa; flete del SERV gana como `flete` y la tarifa queda referencial; la cola se reconstruye desde el `TURNERO` (foto del 16/09/26: disponibles en orden, luego en ruta, luego el resto de activos).
 - **Criterio de done:**
-  - [ ] Dry-run sobre el xlsx real con snapshot de excepciones (test)
-  - [ ] Criterios de §13.3 cumplidos y diferencias listadas, no silenciadas
-- **Referencias:** spec §13, §19 Fase 0, §23
+  - [x] `pnpm db:migrate-xlsx --sin-db` sobre el xlsx real produce el informe con las excepciones de §13.1.8 (placas sin asociado, TR duplicados, `TR-` vacío, `DECLINO` vs `DECLINA`, destinos no canónicos)
+  - [x] Test unitario de los normalizadores (placa, fecha serial, marcas X/NA/NO, clase) y snapshot del informe cuando el xlsx está presente (se omite si no)
+  - [x] Criterios de §13.3: toda placa de SERV AGOS/SEPT existe en `vehiculos`; `valor_recaudo` recalculado desde `parametros.recaudo_porcentaje` y comparado con el 3 % legado, diferencias listadas; cola por clase con N = vehículos activos de la clase
+  - [x] Carga real en el Postgres de `infra/compose.yaml` y API en modo `postgres` mostrando los datos
+  - [x] `docs/migracion-excel.md` (mapeo hoja → tabla, decisiones, qué no se migra y por qué) y ARCHITECTURE §6.6/§13 actualizados
+- **Referencias:** spec §13, §19 Fase 0, §23; ARCHITECTURE §6.6, §11; TASK-0039, TASK-0042
+- **Evidencia (2026-09-16):** `pnpm db:migrate-xlsx --sin-db` → 17 hojas, plan de 27 asociados, 59 vehículos (51 activos), 33 conductores, 53 documentos, 244 habilitaciones, 70 destinos, 1211 tarifas, 51 posiciones (TM-CBZ 32, MM 8, C100 7, C350 4), 265 viajes, 27 usuarios member, 371 excepciones (257 destinos no canónicos agrupados, 10 TR duplicados, 1 `TR-` vacío, 1 `DECLINO`, 1 sufijo, 8 placas de terceros). `--dry-run` y carga real contra Postgres 16 (`infra/compose.yaml` en 5434): "Carga confirmada: 265 TR, 257 recaudos, 33 usuarios"; conteos verificados por SQL y cabeza de `TM-CBZ` = orden del TURNERO (TGM586, SWI750, SPS413…). API en `PERSISTENCIA=postgres`: `/healthz` → `{"ok":true,"modo":"postgres"}`, login `ops@` por código y `GET /api/v1/colas/TM-CBZ` → 32 placas reales. `vitest run --project migracion` → 13/13. `pnpm test:db` sobre la base `asotracmet_test` → 22/22. `pnpm lint` ✓, `pnpm typecheck` ✓. Cierre: tras formatear los 14 archivos pendientes y corregir el documento esperado en `app.test.ts` (`10020000202`, el que genera `seed.ts`), `pnpm check` → 146 passed, 22 skipped (db sin `DATABASE_URL`).
+
+### TASK-0042 — Puertos del host configurables en `infra/compose.yaml`
+
+- **Estado:** hecha
+- **Fase:** 0
+- **Prioridad:** media
+- **Contexto:** Descubierto en TASK-0025 (RULE-007): en la máquina de desarrollo el 5432 y el 6379 ya los ocupan contenedores de otro proyecto y `docker compose up` falla al publicar el puerto. Los puertos del host pasan a ser `ASOTRACMET_PG_PORT` y `ASOTRACMET_REDIS_PORT` (por defecto 5432 y 6379, así CI y la documentación no cambian).
+- **Criterio de done:**
+  - [x] `ASOTRACMET_PG_PORT=5434 ASOTRACMET_REDIS_PORT=6381 docker compose -f infra/compose.yaml up -d` levanta ambos servicios
+  - [x] `.env.example` y ARCHITECTURE §11 documentan las variables
+- **Referencias:** ARCHITECTURE §11; TASK-0025
+- **Evidencia (2026-09-16):** con 5432/6379 ocupados por otro proyecto, `docker compose up` fallaba con "Bind for 0.0.0.0:5432 failed: port is already allocated"; con `ASOTRACMET_PG_PORT=5434 ASOTRACMET_REDIS_PORT=6381` → `infra-postgres-1 Up (healthy) 0.0.0.0:5434->5432/tcp`, `infra-redis-1 Up (healthy) 0.0.0.0:6381->6379/tcp`; `pnpm db:migrate` → 13 aplicadas. Sin variables el compose mantiene 5432/6379 (CI sin cambios). `pnpm check` en verde (ver TASK-0025).
+
+### TASK-0043 — Soportes HSEQ en object storage (subida de archivos)
+
+- **Estado:** pendiente
+- **Fase:** 3
+- **Prioridad:** media
+- **Contexto:** Descubierto al cerrar TASK-0028 (RULE-007). Hoy `documentos.archivo_url` acepta una URL ya alojada (spec §6.3: el archivo nunca va dentro de la base). Falta el flujo de subida real: bucket S3-compatible (spec §18), URL prefirmada desde la API, límite de tamaño y tipo, y descarga con el rol del actor. Sin claves en la base (spec §12).
+- **Criterio de done:**
+  - [ ] `POST /documentos/:id/soporte` devuelve URL prefirmada y guarda `archivo_url` al confirmar
+  - [ ] Tests de API con un almacén S3 falso; e2e sube un PDF desde `/hseq`
+  - [ ] Variables `S3_*` documentadas en `docs/despliegue.md` y ARCHITECTURE §11
+- **Referencias:** spec §6.3, §12, §18; TASK-0028
 - **Evidencia:** —
 
 ### TASK-0026 — Notificaciones
@@ -379,27 +442,31 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 
 ### TASK-0027 — Viajes, tarifas, recaudo y pantalla finance
 
-- **Estado:** pendiente
+- **Estado:** hecha
 - **Fase:** 2
 - **Prioridad:** alta
 - **Contexto:** Spec §6.5, §8.4, §9.2 Finance y §20.7: alta de viaje desde TR, flete acordado vs tarifa sugerida, `porcentaje_aplicado` snapshot al liquidar, recaudos y estado de cobro. Import de `SERV MAY–SEPT`.
 - **Criterio de done:**
-  - [ ] Cambiar `recaudo_porcentaje` afecta solo viajes nuevos (test)
-  - [ ] "El 3% del mes sale del sistema"
+  - [x] Cambiar `recaudo_porcentaje` afecta solo viajes nuevos (test)
+  - [x] "El 3% del mes sale del sistema"
+  - [x] Alta de viaje desde TR, flete acordado vs tarifa sugerida, liquidación con `porcentaje_aplicado` snapshot, pagos y anulación (API memoria y Postgres con RLS)
+  - [x] Pantalla `/finance` con e2e; ARCHITECTURE §6.4, §6.9 y §7 actualizados
 - **Referencias:** spec §6.4-6.5, §10, §19 Fase 2, §20.7
-- **Evidencia:** —
+- **Evidencia (2026-09-16):** `packages/shared/src/recaudo.ts` (`calcularRecaudo`, `estadoRecaudoSegunPago`, 3 tests), `schemas-viajes.ts`, `apps/api/src/viajes/{tipos,memoria,postgres}.ts`, `rutas/viajes.ts`, pantalla `/finance`. `apps/api/src/viajes.test.ts` (6): alta desde TR con tarifa sugerida, liquidación con snapshot y TR cumplido, **cambiar `recaudo_porcentaje` a 0,05 solo afecta al viaje nuevo (75.000) y el viejo conserva 0,03 (45.000)**, pagos parcial/total con `PAGO_INVALIDO` y `RECAUDO_CERRADO`, `VIAJE_YA_EXISTE`/`TR_NO_VIAJABLE`/`VIAJE_NO_LIQUIDABLE`, anular castiga el recaudo, RBAC (ops no crea ni liquida, viewer y member enmascarados, member solo lo suyo). `pnpm test:db` → 24 passed con el caso «viajes y recaudos persisten con RLS». E2E «finance crea el viaje del TR, liquida el 3 % y registra el pago» → 11 passed. Con los datos reales migrados, `GET /viajes/resumen?mes=2026-09` → 42 viajes, flete 118.232.405, recaudo 3.546.975, pagado 3.029.308, pendiente 517.667: el 3 % del mes sale del sistema. `pnpm check` → 162 passed.
 
 ### TASK-0028 — HSEQ bloqueante
 
-- **Estado:** pendiente
+- **Estado:** hecha
 - **Fase:** 3
 - **Prioridad:** alta
 - **Contexto:** Spec §6.3, §9.2 HSEQ, §14: documentos con soporte en object storage, semáforo 30/7/vencido, job nocturno `documentos_recalcular_estado`, alertas, toggle `apto` con motivo. El motor ya filtra por documento vencido y habilitación.
 - **Criterio de done:**
-  - [ ] Ficha de placa con documentos, conductores y habilitaciones por cliente
-  - [ ] "La cola rechaza sola una placa vencida" (ya cubierto en motor; verificar con datos reales)
+  - [x] Ficha de placa con documentos, conductores y habilitaciones por cliente
+  - [x] "La cola rechaza sola una placa vencida" (ya cubierto en motor; verificar con datos reales)
+  - [x] Alertas de vencimiento (API + `/hseq` + `/me`) y job nocturno de recálculo, auditado
+  - [x] Semáforo 30/7/vencido y toggle `apto` con motivo (ya en TASK-0023, verificados aquí)
 - **Referencias:** spec §6.3, §9.2, §14, §19 Fase 3
-- **Evidencia:** —
+- **Evidencia (2026-09-16):** `GET /documentos/alertas?dias=` (vencidos y por vencer, ordenados por urgencia, member solo sus placas, número enmascarado para viewer) y `POST /jobs/recalcular-documentos` + job diario en `index.ts` (`recalcularEstadosDocumentos`: `documentos_recalcular_estado` en Postgres, calculado al leer en memoria). Alertas en `/hseq` y semáforo propio en `/me`. `apps/api/src/hseq.test.ts` (3): UFR114 vencido y QOR007 por vencer, ventana de 7 días, el tiempo pasa sin escribir nada, member solo lo suyo, job auditado y ops no puede. `pnpm test:db` → 24 passed con «el job nocturno actualiza documentos.estado». E2E HSEQ comprueba las alertas en pantalla → 11 passed. **Datos reales**: `GET /colas/TM-CBZ` deja no elegibles por `DOCUMENTO_VENCIDO` a TFW559, NUX418, STO024, SKG606, LPY429, THQ894, SYU007 y TFW561; `GET /documentos/alertas` → 45 alertas; el job recalculó 53 documentos. La subida de soportes a object storage queda en TASK-0043. `pnpm check` → 162 passed.
 
 ### TASK-0029 — Tablero viewer y métricas de equidad
 
@@ -439,15 +506,17 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 
 ### TASK-0032 — Build de producción, Dockerfile y despliegue
 
-- **Estado:** pendiente
+- **Estado:** hecha
 - **Fase:** 1
 - **Prioridad:** alta
 - **Contexto:** Hoy la API corre con `tsx`. Empaquetar con tsup/esbuild, imagen Docker (API + web estática), variables de entorno y despliegue en un VPS o Fly/Render (spec §18). Backups cifrados.
 - **Criterio de done:**
-  - [ ] `pnpm build` produce artefactos ejecutables sin `tsx`
-  - [ ] Despliegue documentado y reproducible
+  - [x] `pnpm build` produce artefactos ejecutables sin `tsx`
+  - [x] Despliegue documentado y reproducible
+  - [x] La API sirve el build de la web (`WEB_DIR`) con fallback SPA y `/api` intacto (test)
+  - [x] Backups cifrados y restore documentados y scriptados
 - **Referencias:** spec §18, §15
-- **Evidencia:** —
+- **Evidencia (2026-09-16):** `pnpm build` → `apps/api/dist/index.mjs` (esbuild ESM, 235 KB, dominio y shared empaquetados; fastify/pg/zod externos), `apps/web/dist` (Vite) y `dist/scripts/{migrate-db,seed-db}.mjs`. `node apps/api/dist/index.mjs` con `WEB_DIR=apps/web/dist` sirve `/` y `/ops` como HTML, `/assets/*` como JS y `/api/v1/*` como JSON (401 sin token); `node dist/scripts/migrate-db.mjs` con `MIGRACIONES_DIR` → "13 omitidas" sobre una base ya migrada. `docker build -t asotracmet:local .` (multi-stage, `pnpm deploy --prod`, 316 MB) y `docker run -e PERSISTENCIA=memoria` → `/healthz` ok, `/` y `/ops` 200 text/html, API 401 JSON. Test `apps/api/src/web-estatica.test.ts` (4) cubre SPA, estáticos y que `/api` no cae al SPA. CI: paso `pnpm build` en `check` y job `imagen` que construye y arranca el contenedor. `infra/compose.prod.yaml`, `scripts/backup-db.sh` (pg_dump → gzip → AES-256) y `scripts/restore-db.sh`; guía en `docs/despliegue.md`. `pnpm check` → 162 passed.
 
 ### TASK-0033 — Contrato OpenAPI y tipos compartidos
 
@@ -504,6 +573,32 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
   - [x] Test de API: POST de acción con `content-type: application/json` y cuerpo vacío responde 200
 - **Referencias:** ARCHITECTURE §6.1; TASK-0015
 - **Evidencia:** `pnpm test:e2e` → 4 passed; `app.test.ts` caso "acepta POST de acción sin cuerpo" en verde (2026-09-16).
+
+### TASK-0038 — Capa de consultas: la API deja de leer el estado en memoria
+
+- **Estado:** hecha
+- **Fase:** 1
+- **Prioridad:** crítica
+- **Contexto:** Descubierto al abordar TASK-0019 (RULE-007). Las rutas componían las respuestas leyendo `almacen.estado.*`, lo que ata la API al almacén en memoria. Se introduce el puerto de lectura `Consultas` (`apps/api/src/consultas/tipos.ts`) con dos adaptadores (`ConsultasMemoria`, `ConsultasPostgres`) que devuelven exactamente las mismas vistas; las rutas dependen de él y, tras cada acción del motor, vuelven a consultar por id. `Almacenamiento` agrupa `uow`, `consultas` y `usuarios`.
+- **Criterio de done:**
+  - [x] Ninguna ruta accede a `almacen.estado`
+  - [x] Los 22 tests de API siguen en verde contra memoria
+  - [x] Las mismas vistas se obtienen contra Postgres
+- **Referencias:** ARCHITECTURE §6.1, §6.7; TASK-0019
+- **Evidencia:** `pnpm test` → proyecto `api` 22 passed sin tocar los tests; `api-postgres.test.ts` comprueba las mismas formas de respuesta sobre Postgres (2026-09-16).
+
+### TASK-0039 — Seed de Postgres y `pnpm db:seed`
+
+- **Estado:** hecha
+- **Fase:** 1
+- **Prioridad:** alta
+- **Contexto:** El mismo conjunto anonimizado de septiembre 2026 que usa el almacén en memoria, volcado a Postgres con UUID deterministas (uuid v5 sobre los identificadores legibles) para que ambos almacenes contengan los mismos datos y los tests puedan resolver ids por llave de negocio. `sembrarPostgres` en `apps/api/src/persistencia/seed-postgres.ts`; `scripts/seed-db.ts`; `pnpm db:seed` y `pnpm db:reset`.
+- **Criterio de done:**
+  - [x] `pnpm db:seed` es idempotente (upserts por llave de negocio)
+  - [x] Usuario de servicio `sistema@asotracmet.test` para los jobs, sin contraseña y sin login
+  - [x] Sin contraseñas de terceros (spec §12)
+- **Referencias:** spec §22.4; ARCHITECTURE §6.6; TASK-0011
+- **Evidencia:** `pnpm db:seed` → "Semilla aplicada: 10 asociados, 17 vehículos, 8 usuarios, 2 requerimientos"; los tests de `api-postgres.test.ts` la reaplican antes de cada caso sin duplicados (2026-09-16). CI la ejecuta en el job `db`.
 
 ## Plantilla
 

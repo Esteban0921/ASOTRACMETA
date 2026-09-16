@@ -17,3 +17,6 @@ Thumbs.db
 !.vscode/extensions.json
 .idea/
 .pg-embedded/
+# Excel legado con PII y credenciales de GPS: nunca al repositorio (RULE-021)
+RECURSOS/
+recursos/

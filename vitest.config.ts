@@ -3,7 +3,7 @@ import { defineConfig } from 'vitest/config';
 // Vitest en modo proyectos: cada paquete/app define su propio vitest.config.ts o vite.config.ts.
 export default defineConfig({
   test: {
-    projects: ['packages/*', 'apps/*', 'infra/postgres'],
+    projects: ['packages/*', 'apps/*', 'infra/postgres', 'infra/migracion'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],

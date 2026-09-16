@@ -64,6 +64,31 @@ export function moverACabeza(posiciones: ColaPosicion[], vehiculoId: string): Co
   ];
 }
 
+/**
+ * Lleva la placa a una posición concreta desplazando al resto (`cola.override`, §7.1.5).
+ * Es una acción de dominio auditada, nunca un input numérico sobre `posicion` (§9.3).
+ */
+export function moverAPosicion(
+  posiciones: ColaPosicion[],
+  vehiculoId: string,
+  nuevaPosicion: number,
+): ColaPosicion[] {
+  const actual = posiciones.find((p) => p.vehiculoId === vehiculoId);
+  if (!actual) {
+    throw new ErrorDominio('INVARIANTE_COLA', 'Vehículo no está en la cola', { vehiculoId });
+  }
+  if (!Number.isInteger(nuevaPosicion) || nuevaPosicion < 1 || nuevaPosicion > posiciones.length) {
+    throw new ErrorDominio(
+      'VALIDATION_ERROR',
+      `La posición debe estar entre 1 y ${posiciones.length}`,
+      { posicion: nuevaPosicion },
+    );
+  }
+  const resto = renumerar(posiciones.filter((p) => p.vehiculoId !== vehiculoId));
+  resto.splice(nuevaPosicion - 1, 0, { ...actual, version: actual.version + 1 });
+  return resto.map((p, indice) => (p.posicion === indice + 1 ? p : { ...p, posicion: indice + 1 }));
+}
+
 export function actualizarPosicion(
   posiciones: ColaPosicion[],
   vehiculoId: string,

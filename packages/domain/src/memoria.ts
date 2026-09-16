@@ -147,6 +147,10 @@ class TransaccionMemoria implements Transaccion {
     reemplazarPorId(this.s.vehiculos, vehiculo);
   }
 
+  async vehiculosDeClase(claseCola: ClaseCola): Promise<Vehiculo[]> {
+    return this.s.vehiculos.filter((v) => v.claseCola === claseCola).map((v) => ({ ...v }));
+  }
+
   async habilitacion(vehiculoId: string, clienteId: string): Promise<Habilitacion | undefined> {
     return this.s.habilitaciones.find(
       (h) => h.vehiculoId === vehiculoId && h.clienteId === clienteId,

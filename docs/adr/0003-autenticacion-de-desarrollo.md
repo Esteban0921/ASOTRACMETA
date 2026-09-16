@@ -1,6 +1,9 @@
 # ADR-0003 — Autenticación de desarrollo (password + token HMAC) antes de OTP/2FA
 
-- Estado: aceptada (2026-09-16); se sustituye con TASK-0021
+- Estado: **sustituida** el 2026-09-16 por la autenticación de producto (TASK-0021): contraseña +
+  TOTP o código por correo para roles internos, enlace mágico para `member`, sesiones opacas
+  revocables y re-autenticación. Ver ARCHITECTURE §6.2. Se conserva como registro de la decisión
+  inicial y de por qué la firma HMAC sigue existiendo (retos de corta vida entre factores).
 - Referencias: spec §3.3, §12; ARCHITECTURE §6.2
 
 ## Contexto

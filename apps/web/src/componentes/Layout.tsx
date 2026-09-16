@@ -11,6 +11,8 @@ export function Layout({ children }: { children: ReactNode }) {
 
   const veSala = rol ? puede(rol, 'cola', 'R') && !esSoloPropio(rol, 'cola') : false;
   const veMiTurno = rol === 'member';
+  const veHseq = rol ? puede(rol, 'vehiculos', 'R') && rol !== 'member' : false;
+  const veFinance = rol ? puede(rol, 'viajes', 'R') && rol !== 'member' : false;
 
   return (
     <div className="app">
@@ -27,6 +29,42 @@ export function Layout({ children }: { children: ReactNode }) {
           {veMiTurno && (
             <Link to="/me" className={pathname === '/me' ? 'activo' : ''}>
               Mi turno
+            </Link>
+          )}
+          {veHseq && (
+            <Link
+              to="/hseq"
+              className={pathname === '/hseq' ? 'activo' : ''}
+              data-testid="nav-hseq"
+            >
+              HSEQ
+            </Link>
+          )}
+          {veFinance && (
+            <Link
+              to="/finance"
+              className={pathname === '/finance' ? 'activo' : ''}
+              data-testid="nav-finance"
+            >
+              Finanzas
+            </Link>
+          )}
+          {rol === 'superadmin' && (
+            <Link
+              to="/admin"
+              className={pathname === '/admin' ? 'activo' : ''}
+              data-testid="nav-admin"
+            >
+              Administración
+            </Link>
+          )}
+          {rol === 'superadmin' && (
+            <Link
+              to="/admin/usuarios"
+              className={pathname === '/admin/usuarios' ? 'activo' : ''}
+              data-testid="nav-usuarios"
+            >
+              Usuarios
             </Link>
           )}
         </nav>

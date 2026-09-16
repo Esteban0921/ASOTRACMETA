@@ -34,6 +34,8 @@ export interface Transaccion {
 
   vehiculo(id: string): Promise<Vehiculo | undefined>;
   guardarVehiculo(vehiculo: Vehiculo): Promise<void>;
+  /** Todos los vehículos de una clase de cola (activos o no), para reconstruir la cola (§13.3). */
+  vehiculosDeClase(claseCola: ClaseCola): Promise<Vehiculo[]>;
   habilitacion(vehiculoId: string, clienteId: string): Promise<Habilitacion | undefined>;
   documentosBloqueantesVencidos(vehiculoId: string, hoy: string): Promise<Documento[]>;
 
