@@ -103,6 +103,7 @@ export function rutasUsuarios(app: FastifyInstance, deps: DepsUsuarios): void {
       rol: entrada.rol,
       passwordHash: entrada.password ? hashPassword(entrada.password) : null,
       totpSecretEnc: null,
+      totpUltimoPaso: null,
       activo: true,
       asociadoId: entrada.asociadoId ?? null,
       vehiculoIds: entrada.vehiculoIds ?? [],
@@ -170,6 +171,7 @@ export function rutasUsuarios(app: FastifyInstance, deps: DepsUsuarios): void {
         // Un asociado no tiene contraseña ni TOTP; un rol interno no tiene placas.
         passwordHash: pasaAMember ? null : usuario.passwordHash,
         totpSecretEnc: pasaAMember ? null : usuario.totpSecretEnc,
+        totpUltimoPaso: pasaAMember ? null : usuario.totpUltimoPaso,
         vehiculoIds: pasaAMember ? usuario.vehiculoIds : [],
       };
       await usuarios.actualizar(actualizado);

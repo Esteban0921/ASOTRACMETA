@@ -10,6 +10,8 @@ export interface Usuario {
   passwordHash: string | null;
   /** Secreto TOTP cifrado (AES-GCM). Null hasta que el usuario configure su segundo factor. */
   totpSecretEnc: string | null;
+  /** Último paso TOTP aceptado (login o re-auth): un código no vale dos veces (RFC 6238 §5.2). */
+  totpUltimoPaso: number | null;
   activo: boolean;
   asociadoId: string | null;
   /** Scope `member` (tabla usuario_vehiculos). */
@@ -50,6 +52,8 @@ export interface RepositorioUsuarios {
   /** Reemplaza nombre, rol, activo, asociadoId, contraseña, secreto TOTP y placas. */
   actualizar(usuario: Usuario): Promise<void>;
   fijarTotpSecret(usuarioId: string, secretEnc: string | null): Promise<void>;
+  /** Anti-replay (TASK-0040): registra el paso de 30 s del último código aceptado. */
+  fijarTotpUltimoPaso(usuarioId: string, paso: number): Promise<void>;
 }
 
 function copia(u: Usuario): Usuario {
@@ -93,6 +97,11 @@ export class AlmacenUsuarios implements RepositorioUsuarios {
     if (usuario) usuario.totpSecretEnc = secretEnc;
   }
 
+  async fijarTotpUltimoPaso(usuarioId: string, paso: number): Promise<void> {
+    const usuario = this.lista.find((u) => u.id === usuarioId);
+    if (usuario) usuario.totpUltimoPaso = paso;
+  }
+
   todos(): Usuario[] {
     return this.lista.map(copia);
   }
@@ -103,7 +112,8 @@ export class AlmacenUsuarios implements RepositorioUsuarios {
 }
 
 const SELECT_USUARIO = `
-  select u.id, u.email, u.nombre, u.rol, u.password_hash, u.totp_secret_enc, u.activo, u.asociado_id,
+  select u.id, u.email, u.nombre, u.rol, u.password_hash, u.totp_secret_enc, u.totp_ultimo_paso,
+         u.activo, u.asociado_id,
          coalesce(
            array_agg(uv.vehiculo_id) filter (where uv.vehiculo_id is not null),
            '{}'
@@ -119,6 +129,10 @@ function aUsuario(f: Record<string, unknown>): Usuario {
     rol: String(f.rol) as Rol,
     passwordHash: f.password_hash === null ? null : String(f.password_hash),
     totpSecretEnc: f.totp_secret_enc === null ? null : String(f.totp_secret_enc),
+    totpUltimoPaso:
+      f.totp_ultimo_paso === null || f.totp_ultimo_paso === undefined
+        ? null
+        : Number(f.totp_ultimo_paso),
     activo: f.activo === true,
     asociadoId: f.asociado_id === null ? null : String(f.asociado_id),
     vehiculoIds: ((f.vehiculo_ids ?? []) as string[]).map(String),
@@ -176,6 +190,13 @@ export class UsuariosPostgres implements RepositorioUsuarios {
       'update usuarios set totp_secret_enc = $2, updated_at = now() where id = $1',
       [usuarioId, secretEnc],
     );
+  }
+
+  async fijarTotpUltimoPaso(usuarioId: string, paso: number): Promise<void> {
+    await this.pool.query('update usuarios set totp_ultimo_paso = $2 where id = $1', [
+      usuarioId,
+      paso,
+    ]);
   }
 
   private async reemplazarVehiculos(c: pg.PoolClient, u: Usuario): Promise<void> {

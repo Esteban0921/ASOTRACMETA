@@ -31,7 +31,7 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 | TASK-0019 | Adaptador Postgres de `Transaccion` / `UnidadDeTrabajo`       | 1    | crítica   | hecha       |
 | TASK-0038 | Capa de consultas: la API deja de leer el estado en memoria   | 1    | crítica   | hecha       |
 | TASK-0039 | Seed de Postgres y `pnpm db:seed`                             | 1    | alta      | hecha       |
-| TASK-0040 | Anti-replay del código TOTP y límite de retos por usuario     | 1    | baja      | pendiente   |
+| TASK-0040 | Anti-replay del código TOTP y límite de retos por usuario     | 1    | baja      | hecha         |
 | TASK-0041 | Pantalla superadmin: parámetros y auditoría filtrable         | 1    | media     | hecha         |
 | TASK-0020 | Lock Redis `cola:{clase}` con reintento                       | 1    | media     | pendiente   |
 | TASK-0021 | Auth producto: OTP, 2FA admin, magic link member, revocación  | 1    | alta      | hecha       |
@@ -327,15 +327,16 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 
 ### TASK-0040 — Anti-replay del código TOTP y límite de retos por usuario
 
-- **Estado:** pendiente
+- **Estado:** hecha (2026-09-17)
 - **Fase:** 1
 - **Prioridad:** baja
 - **Contexto:** Descubierto al cerrar TASK-0021 (RULE-007). RFC 6238 recomienda no aceptar dos veces el mismo código dentro de su ventana; hoy un código válido podría reutilizarse durante ~90 s. También conviene limitar los retos de 2FA vivos por usuario para que un atacante con la contraseña no pueda pedir retos sin fin.
 - **Criterio de done:**
-  - [ ] Guardar el último paso TOTP aceptado por usuario y rechazar códigos de pasos ≤ al último
-  - [ ] Test: el mismo código no entra dos veces
+  - [x] Guardar el último paso TOTP aceptado por usuario y rechazar códigos de pasos ≤ al último
+  - [x] Test: el mismo código no entra dos veces
+  - [x] Máximo 5 retos de 2FA vivos por usuario (`MAX_RETOS_TOTP`); el sexto responde 429 `DEMASIADOS_INTENTOS`
 - **Referencias:** ARCHITECTURE §6.2; TASK-0021
-- **Evidencia:** —
+- **Evidencia:** Migración `0015_totp_anti_replay` (`usuarios.totp_ultimo_paso`); `pasoTotpValido` en `auth/totp.ts` devuelve el paso que casa y `ServicioAuth` lo compara con el último aceptado en login y en re-autenticación (memoria y Postgres). `auth/anti-replay.test.ts` (5 tests): el mismo código no entra dos veces y un paso anterior tampoco; el código de entrar no sirve para `reauth` pero el siguiente sí; con cinco retos vivos el sexto da 429 y se libera al resolver uno o al caducar (5 min); el atajo e2e `/__e2e/totp` devuelve el siguiente paso no usado. Los helpers de login de los tests avanzan el reloj fijo 30 s por acceso. `pnpm check` → 178 passed (2026-09-17); `pnpm test:db` → 27 passed (15 migraciones); `pnpm test:e2e` → 15 passed.
 
 ### TASK-0022 — IAM: CRUD de usuarios, roles y scope member
 

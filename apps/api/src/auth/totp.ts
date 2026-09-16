@@ -62,6 +62,29 @@ export function codigoTotp(secretoBase32: string, instante: Date, desfasePasos =
   return hotp(base32Decodificar(secretoBase32), contador);
 }
 
+/**
+ * Paso de 30 s con el que casa el código dentro de la ventana, o null si no casa. Devolver el paso
+ * permite el anti-replay (TASK-0040): un código no se acepta dos veces.
+ */
+export function pasoTotpValido(
+  secretoBase32: string,
+  codigo: string,
+  instante: Date,
+  ventana = 1,
+): number | null {
+  if (!/^\d{6}$/.test(codigo)) return null;
+  const recibido = Buffer.from(codigo);
+  const secreto = base32Decodificar(secretoBase32);
+  const base = Math.floor(instante.getTime() / 1000 / PASO_SEGUNDOS);
+  for (let desfase = -ventana; desfase <= ventana; desfase += 1) {
+    const esperado = Buffer.from(hotp(secreto, BigInt(base + desfase)));
+    if (esperado.length === recibido.length && timingSafeEqual(esperado, recibido)) {
+      return base + desfase;
+    }
+  }
+  return null;
+}
+
 /** Acepta el paso actual y `ventana` pasos a cada lado (reloj del teléfono ligeramente desfasado). */
 export function verificarCodigoTotp(
   secretoBase32: string,
@@ -69,13 +92,7 @@ export function verificarCodigoTotp(
   instante: Date,
   ventana = 1,
 ): boolean {
-  if (!/^\d{6}$/.test(codigo)) return false;
-  const recibido = Buffer.from(codigo);
-  for (let desfase = -ventana; desfase <= ventana; desfase += 1) {
-    const esperado = Buffer.from(codigoTotp(secretoBase32, instante, desfase));
-    if (esperado.length === recibido.length && timingSafeEqual(esperado, recibido)) return true;
-  }
-  return false;
+  return pasoTotpValido(secretoBase32, codigo, instante, ventana) !== null;
 }
 
 /** URL `otpauth://` que las apps de autenticación leen desde un QR o a mano. */

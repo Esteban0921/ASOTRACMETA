@@ -245,7 +245,13 @@ de un solo uso por correo; **`member`** entra con un enlace mágico de un solo u
 El hook `onRequest` resuelve el Bearer a sesión + usuario, rellena `request.usuario`, `request.actor`
 y `request.sesion`, y fija el contexto RLS. Rutas públicas: `/healthz`, `/readyz` y las de acceso.
 Todas las rutas de acceso llevan rate limit por IP (`loginRateLimitMax`/min: 10 en producción, 1000
-en e2e). ADR-0003 describe la autenticación de desarrollo que esto sustituye.
+en e2e). Anti-replay TOTP (TASK-0040, RFC 6238 §5.2): `usuarios.totp_ultimo_paso` (migración 0015)
+guarda el paso de 30 s del último código aceptado en login o re-autenticación y `pasoTotpValido`
+rechaza cualquier código de un paso igual o anterior (el de entrar no sirve para re-autenticarse: el
+siguiente sí); además cada usuario tiene como máximo `maxRetosTotp` (5) retos de segundo factor
+vivos, el siguiente responde `DEMASIADOS_INTENTOS` hasta que uno se resuelva o caduque. En modo e2e
+`/__e2e/totp` devuelve el siguiente paso no usado. ADR-0003 describe la autenticación de desarrollo
+que esto sustituye.
 
 ### 6.3 RBAC (`auth/plugin.ts`, `packages/shared/src/roles.ts`)
 
@@ -461,6 +467,7 @@ Migraciones SQL append-only (RULE-025), aplicadas por `migrar.ts` (`pnpm db:migr
 | `0011_rol_app_y_consultas` | `audit_log.actor_id` pasa a texto (los jobs firman como `sistema`); `grant asotracmet_app to current_user`; `cola_total(clase)` security definer para el denominador de "Tu posición" bajo RLS |
 | `0012_sesiones`       | `sesiones` (hash del token, expiración por rol, `revocada_en`, `reauth_hasta`); índices de `otp_codes`; sustituye y elimina `refresh_tokens`                  |
 | `0013_reauth_factor`  | `sesiones.reauth_factor` (`password` \| `totp`): el reset de cola exige el segundo factor cuando `reset_cola_requiere_2fa`                                    |
+| `0015_totp_anti_replay` | `usuarios.totp_ultimo_paso` (anti-replay TOTP, TASK-0040)                                                                                       |
 | `0014_metricas_mes`   | `metricas_mes` (snapshot mensual de equidad por placa, RLS lectura para todo rol menos member) |
 
 La API abre cada transacción con `set local app.rol` y `set local app.vehiculo_ids`; sin ellos el

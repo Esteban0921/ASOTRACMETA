@@ -204,6 +204,8 @@ describe('autenticación de producto (spec §3.3)', () => {
     expect(activado.statusCode, activado.body).toBe(200);
     expect(activado.json()).toMatchObject({ usuario: { totpConfigurado: true } });
 
+    // Anti-replay (TASK-0040): el siguiente acceso va en otro paso de 30 s.
+    reloj.fijar(new Date(reloj.ahora().getTime() + 30_000).toISOString());
     const segundo = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/login',
@@ -901,6 +903,8 @@ describe('override y reset de cola (spec §7.1.5, §9.2, §21)', () => {
     expect(conPassword.statusCode).toBe(403);
     expect(conPassword.json()).toMatchObject({ code: 'REAUTH_REQUERIDA' });
 
+    // Anti-replay (TASK-0040): el código de entrar no sirve para re-autenticarse; el siguiente sí.
+    reloj.fijar(new Date(reloj.ahora().getTime() + 30_000).toISOString());
     const reauth = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/reauth',

@@ -42,6 +42,8 @@ describe.skipIf(!url)('API sobre Postgres (spec §20)', () => {
       expect(res.statusCode, res.body).toBe(200);
       return (res.json() as { token: string }).token;
     }
+    // Anti-replay TOTP (TASK-0040): cada acceso con código va en un paso de 30 s distinto.
+    reloj.fijar(new Date(reloj.ahora().getTime() + 30_000).toISOString());
     const primero = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/login',
@@ -71,6 +73,8 @@ describe.skipIf(!url)('API sobre Postgres (spec §20)', () => {
     await pool.query(
       `update parametros set value = '{"prefix": "TR-", "next": 41947}'::jsonb where key = 'secuencia_tr'`,
     );
+    // Anti-replay TOTP (TASK-0040): el reloj vuelve a AHORA, así que el último paso aceptado también.
+    await pool.query('update usuarios set totp_ultimo_paso = null');
     await sembrarPostgres(pool, new Date(AHORA), CLAVE);
     mensajeria.limpiar();
   }
@@ -452,6 +456,8 @@ describe.skipIf(!url)('API sobre Postgres (spec §20)', () => {
 
   it('override y reset de cola persisten posiciones, auditoría y el factor de re-autenticación', async () => {
     const superadmin = await login('superadmin@asotracmet.test');
+    // Anti-replay (TASK-0040): el código con el que entró ya no vale; el del paso siguiente sí.
+    reloj.fijar(new Date(reloj.ahora().getTime() + 30_000).toISOString());
     const reauth = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/reauth',

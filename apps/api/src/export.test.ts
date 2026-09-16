@@ -30,6 +30,8 @@ async function login(email: string): Promise<string> {
     expect(res.statusCode, res.body).toBe(200);
     return (res.json() as { token: string }).token;
   }
+  // Anti-replay TOTP (TASK-0040): cada acceso con código va en un paso de 30 s distinto.
+  reloj.fijar(new Date(reloj.ahora().getTime() + 30_000).toISOString());
   const primero = await app.inject({
     method: 'POST',
     url: '/api/v1/auth/login',
@@ -126,8 +128,8 @@ describe('export de viajes por rol con watermark (spec §3.2, §12)', () => {
     expect(res.headers['content-type']).toContain('text/csv');
     expect(res.headers['content-disposition']).toContain('viajes-2026-09.csv');
     const lineas = res.body.trim().split('\r\n');
-    expect(lineas[0]).toBe(
-      '# ASOTRACMET · exportado por finance@asotracmet.test (admin_finance) el 2026-09-16T13:00:00.000Z · uso interno, no redistribuir',
+    expect(lineas[0]).toMatch(
+      /^# ASOTRACMET · exportado por finance@asotracmet\.test \(admin_finance\) el 2026-09-16T13:0\d:\d\d\.000Z · uso interno, no redistribuir$/,
     );
     expect(lineas[1]).toBe(
       'tr,placa,asociado,documento,cliente,destino,lugar_descargue,fecha_cargue,fecha_descargue,transportadora,flete,porcentaje,recaudo,pagado,estado',
@@ -192,7 +194,7 @@ describe('habeas data: extracto del asociado (spec §12)', () => {
     });
     expect(res.statusCode, res.body).toBe(200);
     expect(res.json()).toMatchObject({
-      generadoEn: '2026-09-16T13:00:00.000Z',
+      generadoEn: expect.stringMatching(/^2026-09-16T13:0\d:/) as string,
       asociado: { nombre: 'ASOCIADO 02 ANONIMIZADO', documento: '10020000202' },
       placas: [{ placa: 'FST189' }, { placa: 'TKM221' }],
       trs: [{ codigo, placa: 'FST189', estado: 'cumplido' }],

@@ -87,6 +87,8 @@ describe('/readyz y /metrics en la API', () => {
       });
       return (res.json() as { token: string }).token;
     }
+    // Anti-replay TOTP (TASK-0040): cada acceso con código va en un paso de 30 s distinto.
+    reloj.fijar(new Date(reloj.ahora().getTime() + 30_000).toISOString());
     const primero = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/login',

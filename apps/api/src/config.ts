@@ -33,6 +33,8 @@ export interface Config {
   challengeTtlMinutos: number;
   reauthMinutos: number;
   maxIntentosOtp: number;
+  /** Retos TOTP vivos por usuario antes de responder `DEMASIADOS_INTENTOS` (TASK-0040). */
+  maxRetosTotp: number;
 }
 
 export function cargarConfig(
@@ -65,5 +67,6 @@ export function cargarConfig(
     challengeTtlMinutos: 5,
     reauthMinutos: Number(env.REAUTH_MINUTOS ?? 5),
     maxIntentosOtp: 5,
+    maxRetosTotp: Number(env.MAX_RETOS_TOTP ?? 5),
   };
 }

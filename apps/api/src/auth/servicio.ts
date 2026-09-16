@@ -20,7 +20,13 @@ import {
   type SesionRegistro,
 } from './sesiones.js';
 import { firmarToken, verificarToken, type PayloadFirmado } from './tokens.js';
-import { codigoTotp, generarSecretoTotp, otpauthUrl, verificarCodigoTotp } from './totp.js';
+import {
+  PASO_SEGUNDOS,
+  codigoTotp,
+  generarSecretoTotp,
+  otpauthUrl,
+  pasoTotpValido,
+} from './totp.js';
 
 // Flujos de acceso (spec §3.3):
 //   roles internos → contraseña + TOTP, o código de un solo uso por correo
@@ -37,6 +43,7 @@ export interface ConfigAuth {
   challengeTtlMinutos: number;
   reauthMinutos: number;
   maxIntentosOtp: number;
+  maxRetosTotp: number;
 }
 
 export interface DepsServicioAuth {
@@ -81,6 +88,9 @@ interface RetoTotp extends PayloadFirmado {
 const PREFIJO_SESION = 'sess';
 
 export class ServicioAuth {
+  /** Retos TOTP emitidos y no resueltos por usuario (expiraciones en ms). Una instancia hoy. */
+  private readonly retosVivos = new Map<string, number[]>();
+
   constructor(private readonly deps: DepsServicioAuth) {}
 
   /**
@@ -108,6 +118,7 @@ export class ServicioAuth {
     const exp = Math.floor(
       sumarMinutos(ahora, this.deps.config.challengeTtlMinutos).getTime() / 1000,
     );
+    this.registrarReto(usuario.id, exp * 1000, ahora);
     if (usuario.totpSecretEnc) {
       const challenge = firmarToken<RetoTotp>(
         { proposito: 'totp', sub: usuario.id, enrolando: false, exp },
@@ -162,10 +173,10 @@ export class ServicioAuth {
       }
       secretEnc = usuario.totpSecretEnc;
     }
-    if (!verificarCodigoTotp(this.descifrarSecreto(secretEnc), codigo, ahora)) {
-      throw new ErrorDominio('CODIGO_INVALIDO', 'Código incorrecto');
-    }
+    const paso = this.pasoAceptado(usuario, this.descifrarSecreto(secretEnc), codigo, ahora);
     if (reto.enrolando) await this.deps.usuarios.fijarTotpSecret(usuario.id, secretEnc);
+    await this.deps.usuarios.fijarTotpUltimoPaso(usuario.id, paso);
+    this.retosVivos.delete(usuario.id);
     // El repositorio devuelve copias: la sesión se emite con el secreto ya activado.
     return this.crearSesion({ ...usuario, totpSecretEnc: secretEnc }, meta);
   }
@@ -275,13 +286,14 @@ export class ServicioAuth {
     const ahora = this.deps.reloj.ahora();
     let factor: SesionRegistro['reauthFactor'] = null;
     if (credencial.codigo && activa.usuario.totpSecretEnc) {
-      if (
-        verificarCodigoTotp(
-          this.descifrarSecreto(activa.usuario.totpSecretEnc),
-          credencial.codigo,
-          ahora,
-        )
-      ) {
+      const paso = pasoTotpValido(
+        this.descifrarSecreto(activa.usuario.totpSecretEnc),
+        credencial.codigo,
+        ahora,
+      );
+      // Mismo anti-replay que en el login: el código de entrar no sirve para re-autenticarse.
+      if (paso !== null && !this.pasoYaUsado(activa.usuario, paso)) {
+        await this.deps.usuarios.fijarTotpUltimoPaso(activa.usuario.id, paso);
         factor = 'totp';
       }
     } else if (credencial.password && activa.usuario.passwordHash) {
@@ -298,11 +310,18 @@ export class ServicioAuth {
   /** Solo para el modo e2e: el código TOTP vigente de un usuario enrolado (o de un secreto dado). */
   async codigoTotpActual(opciones: { email?: string; secret?: string }): Promise<string | null> {
     let secreto = opciones.secret ?? null;
+    let usuario: Usuario | undefined;
     if (!secreto && opciones.email) {
-      const usuario = await this.deps.usuarios.porEmail(opciones.email);
+      usuario = await this.deps.usuarios.porEmail(opciones.email);
       if (usuario?.totpSecretEnc) secreto = this.descifrarSecreto(usuario.totpSecretEnc);
     }
-    return secreto ? codigoTotp(secreto, this.deps.reloj.ahora()) : null;
+    if (!secreto) return null;
+    const ahora = this.deps.reloj.ahora();
+    // Anti-replay: si el paso actual ya se usó, el siguiente sigue dentro de la ventana.
+    const actual = Math.floor(ahora.getTime() / 1000 / PASO_SEGUNDOS);
+    const ultimo = usuario?.totpUltimoPaso ?? null;
+    const desfase = ultimo !== null && ultimo >= actual ? ultimo - actual + 1 : 0;
+    return codigoTotp(secreto, ahora, desfase);
   }
 
   private async crearSesion(usuario: Usuario, meta: MetaPeticion): Promise<SesionEmitida> {
@@ -342,6 +361,33 @@ export class ServicioAuth {
       intentos: 0,
       creadoEn: ahora.toISOString(),
     };
+  }
+
+  /** Límite de retos TOTP vivos por usuario (TASK-0040): frena a quien tiene la contraseña y pide retos sin fin. */
+  private registrarReto(usuarioId: string, expiraMs: number, ahora: Date): void {
+    const vivos = (this.retosVivos.get(usuarioId) ?? []).filter((exp) => exp > ahora.getTime());
+    if (vivos.length >= this.deps.config.maxRetosTotp) {
+      throw new ErrorDominio(
+        'DEMASIADOS_INTENTOS',
+        'Demasiados retos de segundo factor pendientes; espera unos minutos',
+      );
+    }
+    vivos.push(expiraMs);
+    this.retosVivos.set(usuarioId, vivos);
+  }
+
+  private pasoYaUsado(usuario: Usuario, paso: number): boolean {
+    return usuario.totpUltimoPaso !== null && paso <= usuario.totpUltimoPaso;
+  }
+
+  /** Código válido en la ventana y de un paso posterior al último aceptado (RFC 6238 §5.2). */
+  private pasoAceptado(usuario: Usuario, secreto: string, codigo: string, ahora: Date): number {
+    const paso = pasoTotpValido(secreto, codigo, ahora);
+    if (paso === null) throw new ErrorDominio('CODIGO_INVALIDO', 'Código incorrecto');
+    if (this.pasoYaUsado(usuario, paso)) {
+      throw new ErrorDominio('CODIGO_INVALIDO', 'Ese código ya se usó; espera el siguiente');
+    }
+    return paso;
   }
 
   private descifrarSecreto(secretEnc: string): string {
