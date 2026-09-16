@@ -1,0 +1,24 @@
+{
+  "name": "@asotracmet/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lenguaje ubicuo compartido: estados cerrados, roles/RBAC, códigos de error, parámetros y esquemas Zod",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.1"
+  }
+}

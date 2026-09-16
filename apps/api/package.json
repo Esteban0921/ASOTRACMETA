@@ -1,0 +1,29 @@
+{
+  "name": "@asotracmet/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "API REST /api/v1 del enturnamiento (Fastify). Hoy con almacén en memoria; adaptador Postgres en TASK-0017.",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "dev:e2e": "tsx src/index.ts --e2e",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@asotracmet/domain": "workspace:*",
+    "@asotracmet/shared": "workspace:*",
+    "@fastify/cors": "^11.3.0",
+    "@fastify/rate-limit": "^11.2.0",
+    "fastify": "^5.12.5",
+    "uuid": "^14.0.2",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.1.0",
+    "tsx": "^4.23.13",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.1"
+  }
+}

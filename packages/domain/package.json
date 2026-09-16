@@ -1,0 +1,24 @@
+{
+  "name": "@asotracmet/domain",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Motor de cola, estados e invariantes del enturnamiento. Sin HTTP, sin DB, sin UI.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@asotracmet/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.1"
+  }
+}

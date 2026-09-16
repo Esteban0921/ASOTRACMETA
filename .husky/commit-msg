@@ -1,0 +1,7 @@
+# RULE-006: el mensaje de commit referencia una tarea (TASK-XXXX),
+# salvo commits de mantenimiento marcados con [skip-task].
+MSG_FILE="$1"
+if ! grep -qE 'TASK-[0-9]{4}|\[skip-task\]' "$MSG_FILE"; then
+  echo "Commit rechazado: referencia una tarea, ej. 'feat(domain): ... (TASK-0007)', o usa [skip-task]." >&2
+  exit 1
+fi
