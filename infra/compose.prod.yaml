@@ -1,0 +1,58 @@
+# Producción en un VPS (TASK-0032, spec §18): app (API + web), Postgres y Redis en la misma máquina.
+#   cp .env.example .env.prod   # y rellenar AUTH_SECRET, CIFRADO_CLAVE, WEB_URL, CORS_ORIGINS, POSTGRES_PASSWORD
+#   docker compose -f infra/compose.prod.yaml --env-file .env.prod up -d --build
+# La app aplica las migraciones pendientes al arrancar. Detrás va un proxy con TLS (ver docs/despliegue.md).
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: asotracmet:latest
+    restart: unless-stopped
+    environment:
+      PERSISTENCIA: postgres
+      DATABASE_URL: postgres://asotracmet:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD}@postgres:5432/asotracmet
+      REDIS_URL: redis://redis:6379
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET}
+      CIFRADO_CLAVE: ${CIFRADO_CLAVE:?CIFRADO_CLAVE}
+      WEB_URL: ${WEB_URL:?WEB_URL}
+      CORS_ORIGINS: ${CORS_ORIGINS:-${WEB_URL}}
+      MENSAJERIA: ${MENSAJERIA:-consola}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - '${APP_PORT:-127.0.0.1:3001}:3001'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: asotracmet
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD}
+      POSTGRES_DB: asotracmet
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U asotracmet']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
+  redisdata:
