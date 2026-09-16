@@ -19,6 +19,7 @@ import { registrarAuth } from './auth/plugin.js';
 import { ServicioAuth } from './auth/servicio.js';
 import { fechaLocal } from '@asotracmet/shared';
 import { cargarConfig, type Config } from './config.js';
+import { LockRedis, conLockDistribuido, type AlmacenLock } from './lock-cola.js';
 import { RegistroMetricas, pingRedis } from './observabilidad.js';
 import { iniciarTelemetria, trazarUnidadDeTrabajo, type Telemetria } from './telemetria.js';
 import { registrarManejoErrores } from './errores.js';
@@ -50,6 +51,8 @@ export interface OpcionesApp {
   usuarios?: AlmacenUsuarios;
   /** Canal de códigos y enlaces; los tests inyectan `MensajeriaMemoria` para leerlos. */
   mensajeria?: Mensajeria;
+  /** Lock distribuido por clase de cola; por defecto Redis si hay `REDIS_URL`, si no ninguno. */
+  lock?: AlmacenLock;
 }
 
 export interface AppConstruida {
@@ -91,17 +94,36 @@ export async function construirApp(opciones: OpcionesApp = {}): Promise<AppConst
           usuarios: opciones.usuarios,
         }));
 
+  const app = Fastify({
+    logger: config.logger ? { level: process.env.LOG_LEVEL ?? 'info' } : false,
+  });
+
+  // Lock distribuido `cola:{clase}` (§7.7, TASK-0020): con REDIS_URL cada transacción de cola toma
+  // la clave en Redis antes del lock de Postgres; si Redis falla se degrada a Postgres y se cuenta.
+  const lock =
+    opciones.lock ??
+    (config.redisUrl
+      ? new LockRedis(config.redisUrl, {
+          alError: (error) => app.log.debug({ err: error }, 'redis lock'),
+        })
+      : null);
+  const conLock = lock
+    ? conLockDistribuido(almacenamiento.uow, lock, {
+        ttlMs: config.lockTtlMs,
+        prefijo: config.lockPrefijo,
+        alFallar: (error, fase) => {
+          metricas.lockRedisError();
+          app.log.warn({ err: error, fase }, 'redis lock: se sigue con el lock de Postgres');
+        },
+      })
+    : almacenamiento.uow;
   // Cada transacción de cola es un span `cola.transaccion` (trazas en la transacción, §15).
-  const uow = trazarUnidadDeTrabajo(almacenamiento.uow);
+  const uow = trazarUnidadDeTrabajo(conLock);
   const motor = new MotorCola({ uow, reloj, ids });
   const actorSistema: Actor = {
     id: almacenamiento.idSemilla(ID_USUARIO_SISTEMA),
     rol: 'superadmin',
   };
-
-  const app = Fastify({
-    logger: config.logger ? { level: process.env.LOG_LEVEL ?? 'info' } : false,
-  });
 
   const mensajeria =
     opciones.mensajeria ??
@@ -284,6 +306,7 @@ export async function construirApp(opciones: OpcionesApp = {}): Promise<AppConst
   }
 
   app.addHook('onClose', async () => {
+    await lock?.cerrar();
     await almacenamiento.cerrar();
     await telemetria.apagar();
   });

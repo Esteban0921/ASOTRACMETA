@@ -12,7 +12,8 @@ export function rutaInicialPorRol(rol: Rol): string {
 const MENSAJES: Record<string, string> = {
   VEHICULO_NO_HABILITADO: 'La placa no está habilitada para ese cliente.',
   COLA_VACIA: 'No hay placas elegibles en la cola.',
-  COLA_LOCKED: 'Otro coordinador está operando esta cola. Intenta de nuevo.',
+  COLA_LOCKED:
+    'Otro coordinador está operando esta cola. Lo reintentamos dos veces; prueba de nuevo en unos segundos.',
   OFERTA_EXPIRADA: 'La oferta ya expiró.',
   OFERTA_NO_ABIERTA: 'La oferta ya fue respondida.',
   TR_DUPLICADO: 'La secuencia TR está desfasada. Avisa a superadmin.',

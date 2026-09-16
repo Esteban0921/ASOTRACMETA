@@ -23,6 +23,7 @@ Las de `.env.example`, más las que solo aplican en producción:
 | `AUTH_SECRET`       | sí          | firma de sesiones; 32+ caracteres aleatorios (`openssl rand -base64 32`)                    |
 | `CIFRADO_CLAVE`     | sí          | AES-256-GCM de secretos TOTP y cuentas bancarias: 32 bytes en base64 (`openssl rand -base64 32`). **Perderla deja ilegibles los secretos TOTP y las cuentas: guardarla en el gestor de secretos.** |
 | `DATABASE_URL`      | sí          | la arma el compose con `POSTGRES_PASSWORD`                                                 |
+| `REDIS_URL`         | no          | lock distribuido `cola:{clase}` entre instancias (TASK-0020); la fija el compose (`redis://redis:6379`). `LOCK_TTL_MS` (10 s) acota un lock huérfano |
 | `WEB_URL`           | sí          | base pública (`https://turnos.asotracmet.co`): va en los enlaces de acceso de los asociados |
 | `CORS_ORIGINS`      | no          | por defecto `WEB_URL` (misma origen: la web la sirve la API)                               |
 | `WEB_DIR`           | fija        | `/app/web` en la imagen                                                                     |

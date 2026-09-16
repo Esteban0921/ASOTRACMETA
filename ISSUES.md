@@ -33,7 +33,7 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 | TASK-0039 | Seed de Postgres y `pnpm db:seed`                             | 1    | alta      | hecha       |
 | TASK-0040 | Anti-replay del código TOTP y límite de retos por usuario     | 1    | baja      | hecha         |
 | TASK-0041 | Pantalla superadmin: parámetros y auditoría filtrable         | 1    | media     | hecha         |
-| TASK-0020 | Lock Redis `cola:{clase}` con reintento                       | 1    | media     | pendiente   |
+| TASK-0020 | Lock Redis `cola:{clase}` con reintento                       | 1    | media     | hecha         |
 | TASK-0021 | Auth producto: OTP, 2FA admin, magic link member, revocación  | 1    | alta      | hecha       |
 | TASK-0022 | IAM: CRUD usuarios, roles y scope member                      | 1    | alta      | hecha       |
 | TASK-0023 | Maestros: CRUD asociados, vehículos, conductores, catálogos   | 1    | alta      | hecha       |
@@ -301,15 +301,16 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 
 ### TASK-0020 — Lock Redis `cola:{clase}` con reintento
 
-- **Estado:** pendiente
+- **Estado:** hecha (2026-09-17)
 - **Fase:** 1
 - **Prioridad:** media
 - **Contexto:** Spec §7.7: lock distribuido además del advisory lock de Postgres (que ya cubre una sola base con varias instancias de API, porque vive en el servidor), con espera de 2 s y reintento en el cliente web. Prioridad baja mientras haya una sola base; el reintento en la UI sí aporta desde ya.
 - **Criterio de done:**
-  - [ ] Lock con TTL y liberación segura; `COLA_LOCKED` estable
-  - [ ] Runbook "cola trabada" actualizado
-- **Referencias:** spec §7.7, §15; ARCHITECTURE §14; TASK-0019
-- **Evidencia:** —
+  - [x] Lock con TTL y liberación segura; `COLA_LOCKED` estable
+  - [x] Runbook "cola trabada" actualizado
+  - [x] Reintento en el cliente web: escritura con `COLA_LOCKED` espera 2 s y reintenta (dos veces)
+- **Referencias:** spec §7.7, §15; ARCHITECTURE §5.6, §14; TASK-0019
+- **Evidencia:** `apps/api/src/lock-cola.ts`: `conLockDistribuido` envuelve la unidad de trabajo y toma `cola:{clase}` en Redis (`SET NX PX`, token único, `LOCK_TTL_MS` 10 s, liberación compare-and-delete en Lua) antes del advisory lock de Postgres; `COLA_LOCKED` con `details.origen = 'redis'` sin abrir transacción; con Redis caído o mudo (`commandTimeout` 1 s) sigue con Postgres y lo cuenta en `asotracmet_lock_redis_errores_total`. Se activa con `REDIS_URL` (`app.ts`); `ioredis` externo en el bundle. `lock-cola.test.ts` (7 tests): toma/suelta también si falla, ajeno → 409 sin transacción, TTL vence huérfanos, nadie suelta token ajeno, fail-open con Redis caído y con Redis mudo (< 3 s); contra Redis real (`pnpm test:redis`, `REDIS_URL`): dos clientes → uno entra, TTL libera, y la API responde 409 `{origen: redis}` mientras otra instancia tiene la clave y 201 al soltarla. Web: `api()` reintenta escrituras ante `COLA_LOCKED` (2 s, dos veces) y nunca lecturas ni otros códigos (`cliente.test.ts`, 3 tests). Runbook `docs/runbooks/cola-trabada.md` con `PTTL cola:{clase}`; CI job `db` con servicio Redis 7 + `test:redis`. `pnpm check` → 186 passed (2026-09-17); `pnpm test:db` → 27 passed sin y con `REDIS_URL` (lock Redis + Postgres); `pnpm test:e2e` → 15 passed; `pnpm build` en verde.
 
 ### TASK-0021 — Auth de producto
 

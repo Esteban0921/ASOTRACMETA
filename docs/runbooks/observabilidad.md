@@ -15,6 +15,8 @@
   con código estable; el segundo es el que vigila la spec.
 - `asotracmet_ofrecer_latencia_ms_*`: histograma de la transacción `ofrecer` (buckets 25 ms a 5 s).
 - `asotracmet_ofrecer_errores_total`, `asotracmet_declinaciones_total`.
+- `asotracmet_lock_redis_errores_total`: veces que Redis no respondió al tomar o soltar `cola:{clase}`
+  (la operación siguió con el lock de Postgres; ver [cola-trabada.md](cola-trabada.md)).
 - `asotracmet_ofertas_abiertas`, `asotracmet_declinaciones_hoy`: gauges calculados al raspar.
 - `asotracmet_uptime_seconds`.
 

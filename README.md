@@ -25,6 +25,7 @@ necesita nada más. Para operar sobre Postgres: `docker compose -f infra/compose
 | `pnpm test`          | tests unitarios e integración (Vitest, proyectos)                   |
 | `pnpm test:e2e`      | Playwright (levanta API en modo e2e y web)                          |
 | `pnpm test:db`       | migraciones + RLS contra `DATABASE_URL`                             |
+| `pnpm test:redis`    | lock distribuido `cola:{clase}` contra `REDIS_URL`                  |
 | `pnpm db:migrate`    | aplica `infra/postgres/migrations`                                  |
 | `pnpm db:seed`       | siembra el conjunto anonimizado en `DATABASE_URL` (idempotente)     |
 | `pnpm db:reset`      | migra y siembra                                                     |

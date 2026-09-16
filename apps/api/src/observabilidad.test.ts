@@ -5,6 +5,7 @@ import { IdsSecuenciales, RelojFijo } from '@asotracmet/domain';
 import { construirApp } from './app.js';
 import { MensajeriaMemoria } from './auth/mensajeria.js';
 import { codigoTotp } from './auth/totp.js';
+import { LockMemoria } from './lock-cola.js';
 import { RegistroMetricas, pingRedis } from './observabilidad.js';
 import { PASSWORD_DEV, secretoTotpSemilla } from './seed.js';
 
@@ -120,6 +121,8 @@ describe('/readyz y /metrics en la API', () => {
       reloj,
       ids: new IdsSecuenciales('obs'),
       mensajeria,
+      // El Redis de mentira solo contesta PING: el lock de cola (TASK-0020) va en memoria.
+      lock: new LockMemoria(),
     }));
     await app.ready();
   });

@@ -55,10 +55,18 @@ jobs:
           retention-days: 7
 
   db:
-    name: Migraciones Postgres
+    name: Migraciones Postgres y lock Redis
     runs-on: ubuntu-latest
     needs: check
     services:
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
       postgres:
         image: postgres:16
         env:
@@ -73,6 +81,7 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgres://asotracmet:asotracmet@localhost:5432/asotracmet
+      REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -84,6 +93,7 @@ jobs:
       - run: pnpm db:migrate
       - run: pnpm db:seed
       - run: pnpm test:db
+      - run: pnpm test:redis
 
   imagen:
     name: Imagen Docker

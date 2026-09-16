@@ -183,8 +183,14 @@ Secuencia TR: `Transaccion.siguienteCodigoTr()` lee `parametros.secuencia_tr`, d
 coordinador recibe `COLA_LOCKED` (HTTP 409) y reintenta. La comprobación es síncrona en el momento de
 la llamada, por eso 20 `ofrecer` paralelos producen exactamente 1 oferta y 19 rechazos
 (`motor-cola.test.ts`, `app.test.ts`). Clases distintas no se bloquean entre sí. En Postgres el
-equivalente es `SELECT … FOR UPDATE NOWAIT` sobre `cola_posiciones` de la clase + lock Redis
-`cola:{clase}` (TASK-0019/0020).
+equivalente es un advisory lock de transacción + `SELECT … FOR UPDATE NOWAIT` sobre
+`cola_posiciones` de la clase (TASK-0019). Con `REDIS_URL`, `conLockDistribuido` (`lock-cola.ts`,
+TASK-0020) envuelve la unidad de trabajo y toma antes la clave `cola:{clase}` en Redis (`SET NX PX`
+con token único y `LOCK_TTL_MS`, 10 s por defecto; liberación compare-and-delete en Lua): con varias
+instancias de API el segundo coordinador recibe `COLA_LOCKED` con `details.origen = 'redis'` sin
+abrir transacción. Si Redis no responde, la operación sigue solo con Postgres (fail-open) y se
+cuenta en `asotracmet_lock_redis_errores_total`. Del lado web, `api()` (`cliente.ts`) reintenta una
+escritura que choca con `COLA_LOCKED` hasta dos veces esperando 2 s, como pide la spec.
 
 ### 5.7 Puertos y adaptadores (`puertos.ts`, `memoria.ts`)
 
@@ -491,9 +497,8 @@ sobre Postgres se validan con `pnpm test:db` (CI job `db`).
 - Secretos: prohibido persistir credenciales de terceros (no existe columna); `AUTH_SECRET` y
   claves de cifrado del entorno; `.env` ignorado por git.
 - Rate limit en login; CORS estricto por `CORS_ORIGINS`.
-- Pendiente: anti-replay del código TOTP dentro de su ventana (TASK-0040), SMTP y WhatsApp como
-  canal real de códigos y enlaces (TASK-0026), cifrado de `cuenta_bancaria_enc` (TASK-0023),
-  exportaciones con watermark (TASK-0034), backups cifrados y restore drill (TASK-0035).
+- Pendiente: SMTP y WhatsApp como canal real de códigos y enlaces (TASK-0026); subida real de
+  soportes HSEQ a object storage con URL prefirmada (TASK-0043).
 
 ## 10. Estrategia de pruebas
 
@@ -502,16 +507,17 @@ sobre Postgres se validan con `pnpm test:db` (CI job `db`).
 | `shared`                | `packages/shared/src/*.test.ts`    | placas, matriz RBAC (viewer no muta, member own), estados, parámetros, PII, fechas Bogotá                                        |
 | `domain`                | `packages/domain/src/*.test.ts`    | spec §16: cabeza no habilitada → toma la 2; dos TM del mismo asociado; ofrecer+declinar+reofertar en una tx; 20 paralelos → 1 + 19 `COLA_LOCKED`; políticas de declinación; expiración; cancelar TR; secuencia TR; rollback; invariantes |
 | `api`                   | `apps/api/src/**/*.test.ts`        | TOTP contra los vectores del RFC 6238; cifrado AES-GCM; tokens de reto; contraseña + TOTP, enrolamiento en el primer acceso, reto caducado, código por correo de un solo uso, bloqueo tras cinco intentos, anti-enumeración, enlace mágico de un solo uso y caducado, logout que revoca, re-autenticación; expiración de sesión por rol; viewer no muta (403); member no lista TR ajenos; PII enmascarada; flujo ofrecer→aceptar/declinar; idempotencia; parámetros auditados; job; concurrencia HTTP con transacciones lentas; override y reset (RBAC, re-autenticación, segundo factor obligatorio por parámetro, intervenciones visibles para viewer); IAM (listado sin secretos, creación por rol, el nuevo usuario entra, cambio de rol revoca sesiones, desactivación, placas del asociado auditadas) |
-| `web`                   | `apps/web/src/**/*.test.tsx?`      | formato/traducción de errores; `OfertaCard` (declinar exige motivo)                                                               |
+| `web`                   | `apps/web/src/**/*.test.tsx?`      | formato/traducción de errores; `OfertaCard` (declinar exige motivo); `api()` reintenta escrituras ante `COLA_LOCKED` (2 s, dos veces) y nada más |
+| `api` (`test:redis`)    | `apps/api/src/lock-cola.test.ts`   | lock `cola:{clase}`: se toma durante la transacción y se suelta aunque falle, ajeno → `COLA_LOCKED` sin abrir transacción, TTL vence huérfanos, nadie suelta un token ajeno, fail-open con Redis caído; contra Redis real (`REDIS_URL`): `SET NX PX` + compare-and-delete y la API responde 409 `{origen: redis}` mientras otra instancia tiene la clave |
 | `db`                    | `infra/postgres/migraciones.test.ts` | migraciones idempotentes, tablas, audit append-only, RLS member con `set local role`, unicidad diferible, checks de placa. Se omite sin `DATABASE_URL` |
 | `db`                    | `infra/postgres/api-postgres.test.ts` | la API completa sobre Postgres real: sesiones y enlaces persistidos (logout revoca, enlace de un solo uso), enrolamiento TOTP cifrado en la base, cola con elegibilidad, ofrecer→aceptar persistido (posiciones, audit, secuencia TR), declinar con reoferta, cancelar TR, viewer no muta, member no lee ajenos, "Tu posición: 2 de 10" bajo RLS, `COLA_LOCKED` con la clase bloqueada por otra tx, 20 coordinadores en paralelo sobre un cupo → una sola oferta, parámetros auditados; override y reset persistidos con el factor de re-autenticación; usuarios y placas de asociado persistidos (crear, entrar, cambiar rol) |
 | `db`                    | `infra/postgres/anonimizar.test.ts` | copia anonimizada para staging en una base aparte: sin PII ni secretos, operación intacta, trigger append-only reactivado |
 | `migracion`             | `infra/migracion/modelo.test.ts` | normalizadores (placa, serial de Excel, marcas, clase), plan sobre un libro sintético con la forma del Excel real (precedencia de asociado, alias, habilitaciones, tarifas, cola densa, TR sintético, recaudo y excepciones) y criterios §13.3 sobre el xlsx real si está presente |
 | e2e                     | `e2e/*.spec.ts`                    | login ops (contraseña + TOTP) → ofrecer → login member (enlace) → aceptar → aparece TR; declinar con motivo → pasa a la siguiente placa; viewer sin botones y 403 en API; credenciales inválidas; código TOTP incorrecto y correcto; administrador sin segundo factor lo configura en el primer acceso; el enlace del asociado es de un solo uso; superadmin resetea la cola con motivo, confirmación y segundo factor y el veedor ve la intervención; superadmin da de alta un asociado con placa que entra con su enlace |
 
-Comandos: `pnpm test` (unit/integración), `pnpm test:coverage`, `pnpm test:e2e`, `pnpm test:db`.
+Comandos: `pnpm test` (unit/integración), `pnpm test:coverage`, `pnpm test:e2e`, `pnpm test:db`, `pnpm test:redis`.
 `pnpm check` = lint + formato + tipos + unit. CI (`.github/workflows/ci.yml`): job `check`, job `e2e`
-(Chromium; el test de PWA usa un tercer servidor `vite preview` con el build real) y job `db` (servicio Postgres 16 → `db:migrate` + `db:seed` + `test:db`).
+(Chromium; el test de PWA usa un tercer servidor `vite preview` con el build real) y job `db` (servicios Postgres 16 y Redis 7 → `db:migrate` + `db:seed` + `test:db` + `test:redis`).
 
 Los e2e usan puertos propios (API `3101`, web `5273`) para convivir con `pnpm dev` sin reutilizar por
 error un servidor que no esté en modo e2e.
@@ -524,7 +530,7 @@ desarrollo se deriva de `AUTH_SECRET`), `CORS_ORIGINS`, `WEB_URL` (base de los e
 `PERSISTENCIA` (`memoria` | `postgres`), `DATABASE_URL`, `REDIS_URL`, `LOG_LEVEL`,
 `LOGIN_RATE_LIMIT_MAX`, `ASOTRACMET_E2E`. La semilla cifra los secretos TOTP con la misma clave que
 la API: `pnpm db:seed` y la API deben correr con el mismo `AUTH_SECRET`/`CIFRADO_CLAVE`. Modos de la API: memoria (por defecto), postgres (`PERSISTENCIA=postgres` +
-`DATABASE_URL` migrada y sembrada con `pnpm db:reset`, o migrada y cargada desde el Excel con `pnpm db:migrate-xlsx`), e2e (`--e2e`: memoria + seed + reset). Los puertos que publica `infra/compose.yaml` se cambian con `ASOTRACMET_PG_PORT` y `ASOTRACMET_REDIS_PORT` (TASK-0042); `XLSX_LEGADO` apunta al Excel legado. En producción (TASK-0032) `WEB_DIR` hace que la API sirva el build de la web (estáticos + `index.html` para las rutas del SPA; `/api/*` nunca cae al SPA), `MIGRACIONES_DIR` ubica los `.sql` empaquetados y `CIFRADO_CLAVE` es obligatoria. Observabilidad (TASK-0030): `METRICS_TOKEN` protege `/metrics`, `OTEL_EXPORTER_OTLP_ENDPOINT` y `OTEL_SERVICE_NAME` activan la exportación OpenTelemetry (`telemetria.ts`), `REDIS_URL` lo comprueba `/readyz`. `pnpm build` genera `apps/api/dist/index.mjs` (esbuild ESM, sin `tsx`), `apps/web/dist` y `dist/scripts/*.mjs`; el `Dockerfile` los empaqueta en `node:24-alpine` con solo las dependencias de producción y aplica migraciones al arrancar. Guía completa en [docs/despliegue.md](docs/despliegue.md).
+`DATABASE_URL` migrada y sembrada con `pnpm db:reset`, o migrada y cargada desde el Excel con `pnpm db:migrate-xlsx`), e2e (`--e2e`: memoria + seed + reset). Los puertos que publica `infra/compose.yaml` se cambian con `ASOTRACMET_PG_PORT` y `ASOTRACMET_REDIS_PORT` (TASK-0042); `XLSX_LEGADO` apunta al Excel legado. En producción (TASK-0032) `WEB_DIR` hace que la API sirva el build de la web (estáticos + `index.html` para las rutas del SPA; `/api/*` nunca cae al SPA), `MIGRACIONES_DIR` ubica los `.sql` empaquetados y `CIFRADO_CLAVE` es obligatoria. Observabilidad (TASK-0030): `METRICS_TOKEN` protege `/metrics`, `OTEL_EXPORTER_OTLP_ENDPOINT` y `OTEL_SERVICE_NAME` activan la exportación OpenTelemetry (`telemetria.ts`), `REDIS_URL` activa el lock distribuido `cola:{clase}` (TASK-0020; `LOCK_TTL_MS`, 10 s por defecto) y lo comprueba `/readyz`. `pnpm build` genera `apps/api/dist/index.mjs` (esbuild ESM, sin `tsx`), `apps/web/dist` y `dist/scripts/*.mjs`; el `Dockerfile` los empaqueta en `node:24-alpine` con solo las dependencias de producción y aplica migraciones al arrancar. Guía completa en [docs/despliegue.md](docs/despliegue.md).
 Ambientes objetivo: `dev`, `staging` (copia anonimizada: `pnpm db:anonymize-staging --confirmo <base>` sobre un restore, `infra/postgres/anonimizar.ts`, TASK-0035) y `prod`. Staging nunca
 con claves reales porque no deben existir.
 
@@ -552,7 +558,7 @@ ops (TASK-0026), snapshot mensual de equidad (TASK-0029), archivado de `audit_lo
 | HSEQ                     | documentos con semáforo 30/7/vencido (calculado al leer), alertas en `/hseq` y `/me`, habilitación por cliente con motivo, job nocturno de recálculo; verificado con datos reales (8 placas rechazadas por documento vencido) | subida de soportes a object storage | TASK-0028 (hecha), 0043 |
 | Notificaciones           | —                                                | in-app, email, WhatsApp opt-in, outbox         | TASK-0026           |
 | Migración Excel          | `pnpm db:migrate-xlsx`: plan puro, carga repetible, informe (docs/migracion-excel.md) | atar TR reales cuando haya planilla con placa; catálogo de destinos canónicos | TASK-0025 |
-| Observabilidad           | `/readyz` con base y Redis, `/metrics` Prometheus (COLA_LOCKED, latencia de ofrecer, declinaciones, ofertas abiertas), OTel (span `cola.transaccion` + métricas OTLP) opcional, runbooks en `docs/runbooks/` | alertas configuradas en el colector; lock Redis (TASK-0020) | TASK-0030 (hecha)   |
+| Observabilidad           | `/readyz` con base y Redis, `/metrics` Prometheus (COLA_LOCKED, latencia de ofrecer, declinaciones, ofertas abiertas), OTel (span `cola.transaccion` + métricas OTLP) opcional, runbooks en `docs/runbooks/` | alertas configuradas en el colector | TASK-0030 (hecha)   |
 | Despliegue               | `pnpm build` (esbuild + Vite), `Dockerfile` multi-stage, `infra/compose.prod.yaml`, backups cifrados y restore (`docs/despliegue.md`) | Fly/Render con la misma imagen; readyz con Redis | TASK-0032 (hecha), 0030 |
 
 ## 14. Runbooks
@@ -563,8 +569,9 @@ secuencia TR desfasada, member ve placa ajena, restore en staging, observabilida
 - **Cola trabada / `COLA_LOCKED` persistente**: el lock es un advisory lock de transacción
   (`pg_try_advisory_xact_lock`) más `for update nowait`; muere con la transacción, así que un bloqueo
   persistente significa una transacción viva: `select pid, state, query_start from pg_stat_activity
-  where state <> 'idle'` y `pg_terminate_backend(pid)` solo si es un cliente colgado. Con Redis
-  (TASK-0020): `DEL cola:{clase}` solo tras confirmar que no hay transacción viva.
+  where state <> 'idle'` y `pg_terminate_backend(pid)` solo si es un cliente colgado. Con
+  `REDIS_URL` (TASK-0020) la clave `cola:{clase}` vive como mucho `LOCK_TTL_MS`:
+  `redis-cli -u $REDIS_URL PTTL cola:TM-CBZ`; `DEL` solo tras confirmar que no hay transacción viva.
 - **Secuencia TR desfasada (`TR_DUPLICADO`)**: `GET /trs?estado=` para ver el mayor código real;
   `PATCH /parametros { secuencia_tr: { prefix: 'TR-', next: <mayor + 1> } }` como superadmin (queda
   auditado).

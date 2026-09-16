@@ -26,8 +26,31 @@ interface OpcionesLlamada {
   headers?: Record<string, string>;
 }
 
-/** Cliente HTTP mínimo. El token viaja como Bearer; un 401 cierra la sesión local. */
+/** Espera entre reintentos cuando otro coordinador tiene la cola (spec §7.7: "espera 2 s y reintenta"). */
+export const ESPERA_COLA_LOCKED_MS = 2000;
+/** Reintentos de una escritura ante `COLA_LOCKED` antes de rendirse y mostrar el aviso. */
+export const REINTENTOS_COLA_LOCKED = 2;
+
+const esperar = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Cliente HTTP mínimo. El token viaja como Bearer; un 401 cierra la sesión local. Una escritura que
+ * choca con `COLA_LOCKED` (409: nada se hizo) espera 2 s y se reintenta hasta dos veces (TASK-0020).
+ */
 export async function api<T>(ruta: string, opciones: OpcionesLlamada = {}): Promise<T> {
+  for (let intento = 0; ; intento += 1) {
+    try {
+      return await llamar<T>(ruta, opciones);
+    } catch (error) {
+      const escritura = (opciones.method ?? 'GET') !== 'GET';
+      const bloqueada = error instanceof ErrorApiCliente && error.code === 'COLA_LOCKED';
+      if (!escritura || !bloqueada || intento >= REINTENTOS_COLA_LOCKED) throw error;
+      await esperar(ESPERA_COLA_LOCKED_MS);
+    }
+  }
+}
+
+async function llamar<T>(ruta: string, opciones: OpcionesLlamada): Promise<T> {
   const sesion = leerSesion();
   let respuesta: Response;
   try {

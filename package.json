@@ -23,6 +23,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:db": "vitest run --project db",
+    "test:redis": "vitest run --project api lock-cola",
     "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test",
     "db:migrate": "tsx scripts/migrate-db.ts",
     "db:seed": "tsx scripts/seed-db.ts",

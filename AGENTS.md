@@ -18,6 +18,7 @@ pnpm dev                     # API en :3001 (almacén en memoria + seed) y web e
 pnpm check                   # lint + formato + tipos + tests unitarios (obligatorio antes de cerrar una tarea)
 pnpm test:e2e                # Playwright: levanta API en modo e2e y la web
 pnpm test:db                 # migraciones + RLS contra DATABASE_URL (se omite si no está definida)
+pnpm test:redis              # lock distribuido cola:{clase} contra REDIS_URL (se omite si no está definida)
 ```
 
 Usuarios de desarrollo (contraseña `Asotracmet2026!`): `superadmin@`, `ops@`, `hseq@`, `finance@`,

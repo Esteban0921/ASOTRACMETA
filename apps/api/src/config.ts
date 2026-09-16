@@ -19,8 +19,12 @@ export interface Config {
   urlWeb: string;
   /** Carpeta con el build de la web (`apps/web/dist`). Si se define, la API la sirve (producción). */
   webDir: string | null;
-  /** Redis (locks multi-instancia, TASK-0020); hoy solo lo comprueba `/readyz`. */
+  /** Redis: lock distribuido `cola:{clase}` (TASK-0020) y `PING` en `/readyz`. */
   redisUrl: string | null;
+  /** Vida máxima del lock Redis por clase (ms): una transacción colgada no traba la cola para siempre. */
+  lockTtlMs: number;
+  /** Prefijo de las claves del lock (`cola:`); los tests usan uno propio para no chocar. */
+  lockPrefijo: string;
   /** Si está definido, `/metrics` exige `authorization: Bearer <token>`. */
   metricsToken: string | null;
   /** Base OTLP/HTTP del colector OpenTelemetry (`http://host:4318`); sin ella no se exporta nada. */
@@ -58,6 +62,8 @@ export function cargarConfig(
     urlWeb: env.WEB_URL ?? corsOrigins[0] ?? 'http://localhost:5173',
     webDir: env.WEB_DIR ? env.WEB_DIR : null,
     redisUrl: env.REDIS_URL ? env.REDIS_URL : null,
+    lockTtlMs: Number(env.LOCK_TTL_MS ?? 10_000),
+    lockPrefijo: 'cola:',
     metricsToken: env.METRICS_TOKEN ? env.METRICS_TOKEN : null,
     otelEndpoint: env.OTEL_EXPORTER_OTLP_ENDPOINT ? env.OTEL_EXPORTER_OTLP_ENDPOINT : null,
     otelServicio: env.OTEL_SERVICE_NAME ?? 'asotracmet-api',

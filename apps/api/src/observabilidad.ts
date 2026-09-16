@@ -29,11 +29,13 @@ export class RegistroMetricas {
   };
   private ofrecerErrores = 0;
   private declinaciones = 0;
+  private lockRedisErrores = 0;
 
   private readonly otelHttp: Counter;
   private readonly otelErrores: Counter;
   private readonly otelOfrecer: Histogram;
   private readonly otelDeclinaciones: Counter;
+  private readonly otelLockRedis: Counter;
 
   constructor() {
     for (const b of BUCKETS_MS) this.latenciaOfrecer.buckets.set(b, 0);
@@ -43,6 +45,7 @@ export class RegistroMetricas {
     this.otelErrores = meter.createCounter(`${PREFIJO}.errores.dominio`);
     this.otelOfrecer = meter.createHistogram(`${PREFIJO}.ofrecer.latencia`, { unit: 'ms' });
     this.otelDeclinaciones = meter.createCounter(`${PREFIJO}.declinaciones`);
+    this.otelLockRedis = meter.createCounter(`${PREFIJO}.lock_redis.errores`);
   }
 
   httpRespuesta(status: number): void {
@@ -72,6 +75,12 @@ export class RegistroMetricas {
     this.otelDeclinaciones.add(1);
   }
 
+  /** Redis no respondió al tomar o soltar `cola:{clase}`: la operación siguió con Postgres (TASK-0020). */
+  lockRedisError(): void {
+    this.lockRedisErrores += 1;
+    this.otelLockRedis.add(1);
+  }
+
   get resumen() {
     return {
       http: Object.fromEntries(this.httpPorClase),
@@ -81,6 +90,7 @@ export class RegistroMetricas {
         buckets: Object.fromEntries(this.latenciaOfrecer.buckets),
       },
       declinaciones: this.declinaciones,
+      lockRedisErrores: this.lockRedisErrores,
     };
   }
 
@@ -118,6 +128,12 @@ export class RegistroMetricas {
     lineas.push(`${PREFIJO}_ofrecer_errores_total ${this.ofrecerErrores}`);
     metrica('declinaciones_total', 'counter', 'Declinaciones desde el arranque del proceso');
     lineas.push(`${PREFIJO}_declinaciones_total ${this.declinaciones}`);
+    metrica(
+      'lock_redis_errores_total',
+      'counter',
+      'Fallos de Redis al tomar o soltar cola:{clase} (se siguió con Postgres)',
+    );
+    lineas.push(`${PREFIJO}_lock_redis_errores_total ${this.lockRedisErrores}`);
     metrica('ofertas_abiertas', 'gauge', 'Ofertas abiertas ahora');
     lineas.push(`${PREFIJO}_ofertas_abiertas ${enVivo.ofertasAbiertas}`);
     metrica('declinaciones_hoy', 'gauge', 'Declinaciones del día (zona de la operación)');
