@@ -203,3 +203,39 @@ export function mesActual(ahora: Date = new Date()): string {
     month: '2-digit',
   }).format(ahora);
 }
+
+function valorCorto(v: unknown): string {
+  if (v === null || v === undefined) return '—';
+  if (typeof v === 'string') return v.length > 60 ? `${v.slice(0, 57)}…` : v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  const json = JSON.stringify(v);
+  return json.length > 60 ? `${json.slice(0, 57)}…` : json;
+}
+
+function esObjeto(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/**
+ * Antes/después legibles para la auditoría (spec §9.2 Superadmin): una línea por clave que cambió
+ * (`clave: antes → después`) o, si no hay antes, `clave: después`.
+ */
+export function resumenCambios(before: unknown, after: unknown): string[] {
+  if (!esObjeto(after)) {
+    if (after === null || after === undefined)
+      return esObjeto(before) ? ['eliminado'] : ['sin datos'];
+    return [valorCorto(after)];
+  }
+  const previo = esObjeto(before) ? before : {};
+  const lineas: string[] = [];
+  for (const [clave, valor] of Object.entries(after)) {
+    if (clave in previo) {
+      const antes = previo[clave];
+      if (JSON.stringify(antes) === JSON.stringify(valor)) continue;
+      lineas.push(`${clave}: ${valorCorto(antes)} → ${valorCorto(valor)}`);
+    } else {
+      lineas.push(`${clave}: ${valorCorto(valor)}`);
+    }
+  }
+  return lineas.length > 0 ? lineas : ['sin cambios'];
+}

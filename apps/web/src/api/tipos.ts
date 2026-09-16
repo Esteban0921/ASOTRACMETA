@@ -355,3 +355,59 @@ export interface AlertaDocumento extends VistaDocumento {
   conductor: string | null;
   sujeto: string;
 }
+
+/** `GET /audit` (spec §6.6): append-only; `before`/`after` son JSON libres según la acción. */
+export interface EventoAuditoria {
+  id: string;
+  at: string;
+  actorId: string;
+  actorRol: string;
+  accion: string;
+  entidad: string;
+  entidadId: string | null;
+  before: unknown;
+  after: unknown;
+}
+
+// --- Tablero del mes (TASK-0029, spec §9.2 Viewer) --------------------------------------------------
+
+export interface MetricaPlaca {
+  vehiculoId: string;
+  placa: string;
+  claseCola: ClaseCola;
+  etiqueta: string;
+  ofrecidas: number;
+  tomadas: number;
+  declinadas: number;
+  expiradas: number;
+  anuladas: number;
+  trs: number;
+  viajes: number;
+  flete: number;
+  recaudo: number;
+  pagado: number;
+}
+
+export interface Tablero {
+  mes: string;
+  ofertas: {
+    ofrecidas: number;
+    aceptadas: number;
+    declinadas: number;
+    expiradas: number;
+    anuladas: number;
+    abiertas: number;
+  };
+  trs: { asignados: number; cumplidos: number; cancelados: number; noTramitar: number };
+  viajes: {
+    total: number;
+    liquidados: number;
+    flete: number;
+    recaudo: number;
+    pagado: number;
+    pendiente: number;
+  };
+  porClase: Array<{ claseCola: ClaseCola; ofrecidas: number; tomadas: number; declinadas: number }>;
+  declinacionesPorMotivo: Array<{ motivo: string; total: number }>;
+  equidad: MetricaPlaca[];
+}

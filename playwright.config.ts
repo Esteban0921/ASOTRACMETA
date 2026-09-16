@@ -3,6 +3,8 @@ import { defineConfig, devices } from '@playwright/test';
 // Puertos propios de e2e: así los tests conviven con `pnpm dev` (5173 / 3001) sin reutilizar
 // por error un servidor que no está en modo e2e y no expone el reset.
 const WEB_PORT = 5273;
+/** Build de producción servido por `vite preview`: solo el test de PWA (service worker real). */
+const PREVIEW_PORT = 5373;
 const API_PORT = 3101;
 const API_URL = `http://127.0.0.1:${API_PORT}`;
 const isCI = Boolean(process.env.CI);
@@ -37,6 +39,13 @@ export default defineConfig({
       url: `http://localhost:${WEB_PORT}`,
       reuseExistingServer: !isCI,
       timeout: 90_000,
+    },
+    {
+      command: 'pnpm --filter @asotracmet/web preview:e2e',
+      env: { API_URL, E2E_PREVIEW_URL: `http://localhost:${PREVIEW_PORT}` },
+      url: `http://localhost:${PREVIEW_PORT}`,
+      reuseExistingServer: !isCI,
+      timeout: 120_000,
     },
   ],
 });

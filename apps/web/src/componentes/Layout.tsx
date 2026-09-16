@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { esSoloPropio, puede } from '@asotracmet/shared';
 import { useSesion } from '../sesion/contexto';
+import { EstadoConexion } from './EstadoConexion';
 
 export function Layout({ children }: { children: ReactNode }) {
   const { sesion, cerrar } = useSesion();
@@ -13,6 +14,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const veMiTurno = rol === 'member';
   const veHseq = rol ? puede(rol, 'vehiculos', 'R') && rol !== 'member' : false;
   const veFinance = rol ? puede(rol, 'viajes', 'R') && rol !== 'member' : false;
+  const veTablero = rol ? puede(rol, 'trs', 'R') && rol !== 'member' : false;
 
   return (
     <div className="app">
@@ -38,6 +40,15 @@ export function Layout({ children }: { children: ReactNode }) {
               data-testid="nav-hseq"
             >
               HSEQ
+            </Link>
+          )}
+          {veTablero && (
+            <Link
+              to="/tablero"
+              className={pathname === '/tablero' ? 'activo' : ''}
+              data-testid="nav-tablero"
+            >
+              Tablero
             </Link>
           )}
           {veFinance && (
@@ -67,6 +78,24 @@ export function Layout({ children }: { children: ReactNode }) {
               Usuarios
             </Link>
           )}
+          {rol === 'superadmin' && (
+            <Link
+              to="/admin/parametros"
+              className={pathname === '/admin/parametros' ? 'activo' : ''}
+              data-testid="nav-parametros"
+            >
+              Parámetros
+            </Link>
+          )}
+          {rol === 'superadmin' && (
+            <Link
+              to="/admin/auditoria"
+              className={pathname === '/admin/auditoria' ? 'activo' : ''}
+              data-testid="nav-auditoria"
+            >
+              Auditoría
+            </Link>
+          )}
         </nav>
         <div className="usuario" data-testid="usuario-actual">
           <span>{sesion?.usuario.nombre}</span>
@@ -83,6 +112,7 @@ export function Layout({ children }: { children: ReactNode }) {
           </button>
         </div>
       </header>
+      <EstadoConexion />
       <main className="contenido">{children}</main>
     </div>
   );

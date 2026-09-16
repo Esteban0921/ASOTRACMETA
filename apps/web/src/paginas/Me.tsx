@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { api, codigoDeError } from '../api/cliente';
+import { api, codigoDeError, descargar } from '../api/cliente';
 import type {
   AlertaDocumento,
   MiPosicion,
@@ -124,6 +124,26 @@ export function Me() {
             </li>
           ))}
         </ul>
+      </section>
+
+      <section className="card" data-testid="habeas-data">
+        <h2>Tus datos</h2>
+        <p className="detalle">
+          Puedes pedir el extracto de tus TR, viajes y recaudos, junto con el propósito del
+          tratamiento y cómo pedir corrección o supresión (habeas data).
+        </p>
+        <button
+          type="button"
+          className="secundario"
+          data-testid="descargar-extracto"
+          onClick={() => {
+            descargar('/me/extracto', 'mi-extracto-asotracmet.json').catch((e: unknown) =>
+              setError(traducirError(codigoDeError(e))),
+            );
+          }}
+        >
+          Descargar mi extracto
+        </button>
       </section>
 
       <section className="card" data-testid="mis-trs">

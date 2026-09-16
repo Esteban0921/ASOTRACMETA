@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# service worker que vite-plugin-pwa genera en dev/e2e
+dev-dist/
 coverage/
 .turbo/
 *.tsbuildinfo

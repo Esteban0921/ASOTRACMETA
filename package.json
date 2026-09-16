@@ -27,6 +27,7 @@
     "db:migrate": "tsx scripts/migrate-db.ts",
     "db:seed": "tsx scripts/seed-db.ts",
     "db:reset": "tsx scripts/migrate-db.ts && tsx scripts/seed-db.ts",
+    "db:anonymize-staging": "tsx scripts/anonymize-staging.ts",
     "prepare": "husky",
     "db:migrate-xlsx": "tsx scripts/migrate-xlsx.ts"
   },

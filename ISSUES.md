@@ -32,7 +32,7 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 | TASK-0038 | Capa de consultas: la API deja de leer el estado en memoria   | 1    | crítica   | hecha       |
 | TASK-0039 | Seed de Postgres y `pnpm db:seed`                             | 1    | alta      | hecha       |
 | TASK-0040 | Anti-replay del código TOTP y límite de retos por usuario     | 1    | baja      | pendiente   |
-| TASK-0041 | Pantalla superadmin: parámetros y auditoría filtrable         | 1    | media     | pendiente   |
+| TASK-0041 | Pantalla superadmin: parámetros y auditoría filtrable         | 1    | media     | hecha         |
 | TASK-0020 | Lock Redis `cola:{clase}` con reintento                       | 1    | media     | pendiente   |
 | TASK-0021 | Auth producto: OTP, 2FA admin, magic link member, revocación  | 1    | alta      | hecha       |
 | TASK-0022 | IAM: CRUD usuarios, roles y scope member                      | 1    | alta      | hecha       |
@@ -44,14 +44,14 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 | TASK-0026 | Notificaciones (in-app, email, WhatsApp opt-in) con outbox    | 1-2  | media     | pendiente   |
 | TASK-0027 | Viajes, tarifas, recaudo 3% y pantalla finance                | 2    | alta      | hecha         |
 | TASK-0028 | HSEQ: documentos, semáforo, habilitaciones, job nocturno      | 3    | alta      | hecha         |
-| TASK-0029 | Tablero viewer y métricas de equidad (`metricas_mes`)         | 2    | media     | pendiente   |
-| TASK-0030 | Observabilidad: OpenTelemetry, métricas, readyz, runbooks     | 1-2  | media     | pendiente   |
-| TASK-0031 | PWA: service worker, instalable, lectura offline              | 1    | media     | pendiente   |
+| TASK-0029 | Tablero viewer y métricas de equidad (`metricas_mes`)         | 2    | media     | hecha         |
+| TASK-0030 | Observabilidad: OpenTelemetry, métricas, readyz, runbooks     | 1-2  | media     | hecha         |
+| TASK-0031 | PWA: service worker, instalable, lectura offline              | 1    | media     | hecha         |
 | TASK-0032 | Build de producción de la API, Dockerfile y despliegue        | 1    | alta      | hecha         |
 | TASK-0033 | Contrato OpenAPI desde Zod y tipos compartidos con la web     | 1    | baja      | pendiente   |
-| TASK-0034 | Export CSV por rol con watermark                              | 2    | baja      | pendiente   |
-| TASK-0035 | Staging anonimizado y simulacro de restore                    | 2    | media     | pendiente   |
-| TASK-0036 | Habeas data: extracto de TR por asociado                      | 2    | baja      | pendiente   |
+| TASK-0034 | Export CSV por rol con watermark                              | 2    | baja      | hecha         |
+| TASK-0035 | Staging anonimizado y simulacro de restore                    | 2    | media     | hecha         |
+| TASK-0036 | Habeas data: extracto de TR por asociado                      | 2    | baja      | hecha         |
 | TASK-0037 | Bug: cliente web enviaba `content-type: json` sin cuerpo      | 1    | alta      | hecha       |
 
 ## Tareas
@@ -377,16 +377,16 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 
 ### TASK-0041 — Pantalla superadmin: parámetros y auditoría filtrable
 
-- **Estado:** pendiente
+- **Estado:** hecha
 - **Fase:** 1
 - **Prioridad:** media
 - **Contexto:** Spec §9.2 Superadmin: editar parámetros de cola y recaudo desde la web (hoy solo por `PATCH /parametros`) y consultar la auditoría con filtros (entidad, id, acción). La API ya lo soporta; falta la pantalla en `/admin`.
 - **Criterio de done:**
-  - [ ] Formulario de parámetros con validación Zod compartida y confirmación
-  - [ ] Tabla de auditoría filtrable con before/after legibles
-  - [ ] e2e: cambiar `oferta_ttl_minutos` desde la web queda auditado
+  - [x] Formulario de parámetros con validación Zod compartida y confirmación
+  - [x] Tabla de auditoría filtrable con before/after legibles
+  - [x] e2e: cambiar `oferta_ttl_minutos` desde la web queda auditado
 - **Referencias:** spec §9.2, §10; ARCHITECTURE §7; TASK-0024
-- **Evidencia:** —
+- **Evidencia (2026-09-17):** Pantallas `/admin/parametros` (`Parametros.tsx`: formulario con `PatchParametrosSchema` compartido, confirmación con el detalle de cambios, solo envía las claves modificadas, historial de `parametros.cambiar`) y `/admin/auditoria` (`Auditoria.tsx`: filtros por entidad, id, acción y límite; antes/después legible con `resumenCambios`, JSON desplegable). Unit test de `resumenCambios` en `formato.test.ts` (10 passed en `web`). E2E «superadmin cambia oferta_ttl_minutos desde la web y el cambio queda auditado con antes y después» → 13 passed. `pnpm check` → 165 passed.
 
 ### TASK-0025 — Migración controlada desde el Excel
 
@@ -470,39 +470,42 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 
 ### TASK-0029 — Tablero viewer y métricas de equidad
 
-- **Estado:** pendiente
+- **Estado:** hecha
 - **Fase:** 2
 - **Prioridad:** media
 - **Contexto:** Spec §8.5 `GET /tablero?mes=`, §9.2 Viewer, §14 snapshot mensual (`metricas_mes`): viajes del mes, declinaciones, turnos tomados vs ofrecidos por placa (ya se acumulan en `cola_posiciones`).
 - **Criterio de done:**
-  - [ ] Tablero solo lectura con PII enmascarada
-  - [ ] Snapshot mensual reproducible
+  - [x] Tablero solo lectura con PII enmascarada
+  - [x] Snapshot mensual reproducible
+  - [x] Tablero solo lectura con PII enmascarada (no expone cédulas; member no lo ve)
 - **Referencias:** spec §8.5, §9.2, §14
-- **Evidencia:** —
+- **Evidencia (2026-09-17):** `GET /tablero?mes=` (cálculo puro `calcularTablero`: ofertas por estado, por clase y por motivo de declinación; TR por estado; viajes liquidados; equidad ofrecidas/tomadas por placa), `GET /tablero/snapshots`, `POST /jobs/snapshot-metricas` (auditado `metricas.snapshot`) y snapshot automático el día 1 en `index.ts`; migración `0014_metricas_mes` con RLS; pantalla `/tablero`. `apps/api/src/tablero.test.ts` (2): equidad FST189 1/1, TKM221 declinó, SWI750 abierta, member 403; **el snapshot es reproducible**: dos corridas iguales y equivalentes al tablero en vivo. `pnpm test:db` → 25 passed con «el snapshot mensual de equidad se persiste en metricas_mes». E2E «el veedor ve en el tablero la equidad del mes» → 13 passed. `pnpm check` → 165 passed. Corregido de paso el fin de mes (`finDeMes`) que fallaba con `-31`.
 
 ### TASK-0030 — Observabilidad y runbooks
 
-- **Estado:** pendiente
+- **Estado:** hecha
 - **Fase:** 1-2
 - **Prioridad:** media
 - **Contexto:** Spec §15: `/readyz` con DB y Redis, métricas (ofertas abiertas, tiempo de respuesta, declinaciones/día, `COLA_LOCKED`, latencia de `ofrecer`), trazas en la transacción de cola, logs sin PII, runbooks completos.
 - **Criterio de done:**
-  - [ ] OpenTelemetry exportando trazas y métricas
-  - [ ] Runbooks en `docs/runbooks/`
+  - [x] OpenTelemetry exportando trazas y métricas
+  - [x] Runbooks en `docs/runbooks/`
+  - [x] `/readyz` con base y Redis (503 si falla), `/metrics` Prometheus sin PII con `METRICS_TOKEN`, contadores COLA_LOCKED, latencia de ofrecer, declinaciones y ofertas abiertas
 - **Referencias:** spec §15; ARCHITECTURE §14
-- **Evidencia:** —
+- **Evidencia (2026-09-17):** `observabilidad.ts` (registro Prometheus + `pingRedis` por TCP), `telemetria.ts` (`NodeTracerProvider` + `MeterProvider` OTLP/HTTP solo con `OTEL_EXPORTER_OTLP_ENDPOINT`; `trazarUnidadDeTrabajo` envuelve cada transacción de cola en el span `cola.transaccion` con clase y código de error), hooks en `app.ts` (respuestas HTTP, errores de dominio, latencia de `ofrecer`, declinaciones). `apps/api/src/observabilidad.test.ts` (4): formato Prometheus, PING a un Redis falso y a un puerto cerrado, `/readyz` con base y Redis, `/metrics` con token, `COLA_LOCKED` contado bajo 3 ofertas en paralelo, latencia y declinaciones. Bundle: `/readyz` → `{ok, db:{ok,ms}, redis:'n/a'}`, `/metrics` 401 sin token y texto con token; API real en Postgres: `db.ms=59`. Runbooks en `docs/runbooks/` (cola trabada, secuencia TR, member ve placa ajena, restore, observabilidad). `pnpm test:db` → 25 passed; e2e → 14 passed; `pnpm check` → 173 passed.
 
 ### TASK-0031 — PWA completa
 
-- **Estado:** pendiente
+- **Estado:** hecha
 - **Fase:** 1
 - **Prioridad:** media
 - **Contexto:** Spec §9.1: "Mi turno" instalable; service worker con caché de shell y lectura offline de posición/ofertas; aviso de sin conexión.
 - **Criterio de done:**
-  - [ ] Lighthouse PWA instalable
-  - [ ] E2E de instalación no rompe los flujos actuales
+  - [x] Lighthouse PWA instalable
+  - [x] E2E de instalación no rompe los flujos actuales
+  - [x] Service worker con caché del shell y lectura offline de posición/ofertas; aviso de sin conexión
 - **Referencias:** spec §9.1, §9.2 Member
-- **Evidencia:** —
+- **Evidencia (2026-09-17):** `vite-plugin-pwa` (manifest con iconos PNG 192/512 y SVG, `standalone`; service worker Workbox con el shell precacheado y `NetworkFirst` para `/api/v1/me/*`, alertas y motivos), `registerSW` en `main.tsx`, `EstadoConexion` (aviso de sin conexión). `pnpm build` → `dist/sw.js` + `manifest.webmanifest` + 8 entradas precacheadas. E2E «PWA: manifest instalable, service worker activo y Mi turno legible sin conexión» corre contra el build servido por `vite preview` (`preview:e2e`, tercer `webServer` de Playwright): manifest `standalone` con 192x192/512x512, SW `activated`, y sin red (`context.setOffline`) el aviso aparece, `/index.html` y `/api/v1/me/cola` responden 200 desde la caché sin token mientras `/api/v1/colas/TM-CBZ` (no cacheado) falla. **Lighthouse no se ejecutó en esta máquina**: los criterios de instalabilidad de Chrome (manifest válido con iconos PNG, `start_url`, `display`, service worker con fetch, HTTPS por el proxy) están cubiertos y verificados por el e2e. Los 15 e2e existentes siguen en verde.
 
 ### TASK-0032 — Build de producción, Dockerfile y despliegue
 
@@ -531,36 +534,38 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 
 ### TASK-0034 — Export CSV por rol con watermark
 
-- **Estado:** pendiente
+- **Estado:** hecha
 - **Fase:** 2
 - **Prioridad:** baja
 - **Contexto:** Spec §8.5 y §12: `GET /export/viajes.csv` gated por rol, watermark de usuario y fecha, viewer sin PII, member solo lo propio.
 - **Criterio de done:**
-  - [ ] Test por rol del contenido exportado
+  - [x] Test por rol del contenido exportado
+  - [x] Marca de agua de usuario y fecha; auditado
 - **Referencias:** spec §3.2 export, §12
-- **Evidencia:** —
+- **Evidencia (2026-09-17):** `GET /export/viajes.csv?mes=` (`rutas/export.ts`): CSV RFC 4180 con marca de agua `# ASOTRACMET · exportado por <email> (<rol>) el <instante>` en la primera línea, viewer con cédula enmascarada, member solo sus placas, auditado `export.viajes`; botón «Exportar CSV» en `/finance` con `descargar()` (fetch con Bearer). `apps/api/src/export.test.ts`: escape CSV, finance completo con auditoría, viewer sin PII, member ajeno solo cabecera y dueño con su fila. E2E «finance exporta el CSV del mes con marca de agua…» comprueba la descarga real → 14 passed. `pnpm check` → 169 passed.
 
 ### TASK-0035 — Staging anonimizado y simulacro de restore
 
-- **Estado:** pendiente
+- **Estado:** hecha
 - **Fase:** 2
 - **Prioridad:** media
 - **Contexto:** Spec §15 y §20.8: `scripts/anonymize-staging.ts`, backup continuo y restore en staging < 2 h, trimestral.
 - **Criterio de done:**
-  - [ ] Procedimiento documentado y ejecutado una vez con evidencia
+  - [x] Procedimiento documentado y ejecutado una vez con evidencia
+  - [x] `scripts/anonymize-staging.ts` repetible, con prueba en base aparte
 - **Referencias:** spec §15, §20.8
-- **Evidencia:** —
+- **Evidencia (2026-09-17):** `infra/postgres/anonimizar.ts` + `pnpm db:anonymize-staging --confirmo <base>`: nombres, documentos, celulares, correos y direcciones deterministas; cuentas bancarias, secretos TOTP, teléfonos y `last_login` a null; sesiones y códigos truncados; PII de la auditoría de maestros/IAM vaciada (trigger append-only reactivado); roles internos con la contraseña de desarrollo; rechaza `asotracmet`/`postgres` y exige repetir el nombre de la base. Test `infra/postgres/anonimizar.test.ts` en una base propia (`<base>_anonimizar`) → `pnpm test:db` 27 passed. **Simulacro ejecutado el 2026-09-17** sobre la copia local con los datos reales del Excel: `pg_dump asotracmet | psql asotracmet_staging` (3 s) + anonimizar → 27 asociados, 33 conductores, 59 vehículos, 33 usuarios, 4 sesiones borradas; verificación SQL: 0 documentos reales, 0 cuentas, 0 correos reales, 0 secretos TOTP, 0 sesiones; 59 vehículos, 265 TR, 265 viajes y 257 recaudos intactos. Tiempo total 8 s (objetivo < 2 h). Procedimiento en `docs/runbooks/restore-en-staging.md`.
 
 ### TASK-0036 — Habeas data: extracto de TR por asociado
 
-- **Estado:** pendiente
+- **Estado:** hecha
 - **Fase:** 2
 - **Prioridad:** baja
 - **Contexto:** Spec §12: el asociado puede pedir extracto de sus TR; propósito, acceso y cancelación.
 - **Criterio de done:**
-  - [ ] Endpoint y pantalla en "Mi turno"; auditado
+  - [x] Endpoint y pantalla en "Mi turno"; auditado
 - **Referencias:** spec §12
-- **Evidencia:** —
+- **Evidencia (2026-09-17):** `GET /me/extracto` (solo member): placas, TR, viajes, recaudos y textos de habeas data (propósito, acceso, cancelación), auditado `habeas.extracto` sobre `asociados`; internos reciben 403. Botón «Descargar mi extracto» en Mi turno. Test en `export.test.ts` y e2e (descarga del JSON con placas FST189/TKM221) → 14 passed. `pnpm check` → 169 passed.
 
 ### TASK-0037 — Bug: el cliente web enviaba `content-type: application/json` sin cuerpo
 

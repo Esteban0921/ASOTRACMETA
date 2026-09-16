@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
 import { ESTADOS_TR_VIGENTES, puede, type Rol } from '@asotracmet/shared';
-import { api, codigoDeError } from '../api/cliente';
+import { api, codigoDeError, descargar } from '../api/cliente';
 import type { DetalleViaje, ResumenMes, Transportadora, VistaTr, VistaViaje } from '../api/tipos';
 import { useSesion } from '../sesion/contexto';
 import {
@@ -31,6 +31,7 @@ export function Finance() {
   const [error, setError] = useState<string | null>(null);
 
   const puedeCrear = puede(rol, 'viajes', 'C');
+  const puedeExportar = puede(rol, 'export', 'A');
 
   const viajesMes = useQuery({
     queryKey: ['viajes', mes],
@@ -110,6 +111,21 @@ export function Finance() {
       <section className="columna" aria-labelledby="titulo-viajes">
         <div className="pestanas">
           <h2 id="titulo-viajes">Viajes</h2>
+          {puedeExportar && (
+            <button
+              type="button"
+              className="secundario"
+              data-testid="finance-exportar"
+              onClick={() => {
+                descargar(`/export/viajes.csv?mes=${mes}`, `viajes-${mes}.csv`).then(
+                  () => exito(`CSV de ${mes} descargado (con marca de agua).`),
+                  fallo,
+                );
+              }}
+            >
+              Exportar CSV
+            </button>
+          )}
           <label>
             Mes
             <input

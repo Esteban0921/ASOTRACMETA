@@ -19,6 +19,13 @@ export interface Config {
   urlWeb: string;
   /** Carpeta con el build de la web (`apps/web/dist`). Si se define, la API la sirve (producción). */
   webDir: string | null;
+  /** Redis (locks multi-instancia, TASK-0020); hoy solo lo comprueba `/readyz`. */
+  redisUrl: string | null;
+  /** Si está definido, `/metrics` exige `authorization: Bearer <token>`. */
+  metricsToken: string | null;
+  /** Base OTLP/HTTP del colector OpenTelemetry (`http://host:4318`); sin ella no se exporta nada. */
+  otelEndpoint: string | null;
+  otelServicio: string;
   /** Canal de códigos y enlaces: `consola` (dev, salen por el log) o `memoria` (tests/e2e). */
   mensajeria: 'consola' | 'memoria';
   otpTtlMinutos: number;
@@ -48,6 +55,10 @@ export function cargarConfig(
     claveCifrado: claveDesdeEntorno(env),
     urlWeb: env.WEB_URL ?? corsOrigins[0] ?? 'http://localhost:5173',
     webDir: env.WEB_DIR ? env.WEB_DIR : null,
+    redisUrl: env.REDIS_URL ? env.REDIS_URL : null,
+    metricsToken: env.METRICS_TOKEN ? env.METRICS_TOKEN : null,
+    otelEndpoint: env.OTEL_EXPORTER_OTLP_ENDPOINT ? env.OTEL_EXPORTER_OTLP_ENDPOINT : null,
+    otelServicio: env.OTEL_SERVICE_NAME ?? 'asotracmet-api',
     mensajeria: env.MENSAJERIA === 'memoria' || modoE2e ? 'memoria' : 'consola',
     otpTtlMinutos: Number(env.OTP_TTL_MINUTOS ?? 10),
     magicLinkTtlMinutos: Number(env.MAGIC_LINK_TTL_MINUTOS ?? 15),

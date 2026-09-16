@@ -10,14 +10,16 @@
     "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview --port 5173 --strictPort",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "preview:e2e": "vite build && vite preview --port 5373 --strictPort"
   },
   "dependencies": {
     "@asotracmet/shared": "workspace:*",
     "@tanstack/react-query": "^5.103.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "react-router-dom": "^7.18.4"
+    "react-router-dom": "^7.18.4",
+    "workbox-window": "^7.4.1"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.0",
@@ -29,6 +31,7 @@
     "jsdom": "^30.0.1",
     "typescript": "~5.9.3",
     "vite": "^8.3.0",
+    "vite-plugin-pwa": "^1.3.0",
     "vitest": "^5.0.1"
   }
 }

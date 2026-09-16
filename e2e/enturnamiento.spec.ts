@@ -6,6 +6,8 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 // En modo e2e la API expone los códigos y mensajes que en producción viajan por correo.
 
 const API = process.env.E2E_API_URL ?? 'http://127.0.0.1:3101';
+/** Build de producción (service worker real) para el test de PWA. */
+const PREVIEW = process.env.E2E_PREVIEW_URL ?? 'http://localhost:5373';
 const PASSWORD = 'Asotracmet2026!';
 
 const esMember = (email: string) => email.startsWith('member.');
@@ -356,4 +358,122 @@ test('finance crea el viaje del TR, liquida el 3 % y registra el pago; el resume
   await expect(page.getByTestId('finance-estado-recaudo')).toContainText('Pagado');
   await expect(page.getByTestId('finance-resumen-recaudo')).toContainText('45.000');
   await expect(page.getByTestId('finance-resumen-pendiente')).toContainText('0');
+});
+
+test('superadmin cambia oferta_ttl_minutos desde la web y el cambio queda auditado con antes y después', async ({
+  page,
+  request,
+}) => {
+  await login(page, request, 'superadmin@asotracmet.test');
+  await page.getByTestId('nav-parametros').click();
+  await expect(page).toHaveURL(/\/admin\/parametros$/);
+  await page.getByTestId('param-oferta_ttl_minutos').fill('90');
+  page.once('dialog', (dialogo) => void dialogo.accept());
+  await page.getByTestId('param-guardar').click();
+  await expect(page.getByTestId('param-mensaje')).toContainText('oferta_ttl_minutos');
+  await expect(page.getByTestId('param-historial')).toContainText('oferta_ttl_minutos: 120 → 90');
+
+  await page.getByTestId('nav-auditoria').click();
+  await page.getByTestId('audit-entidad').selectOption('parametros');
+  await expect(page.getByTestId('audit-fila-parametros.cambiar')).toContainText('120 → 90');
+});
+
+test('el veedor ve en el tablero la equidad del mes: FST189 con una oferta tomada', async ({
+  page,
+  request,
+}) => {
+  const ops = await tokenApi(request, 'ops@asotracmet.test');
+  const oferta = await request.post(`${API}/api/v1/requerimientos/req-hlb-castilla/ofertas`, {
+    headers: { authorization: `Bearer ${ops}` },
+  });
+  expect(oferta.ok(), await oferta.text()).toBeTruthy();
+  const member = await tokenApi(request, 'member.fst189@asotracmet.test');
+  const aceptada = await request.post(
+    `${API}/api/v1/ofertas/${((await oferta.json()) as { id: string }).id}/aceptar`,
+    { headers: { authorization: `Bearer ${member}` } },
+  );
+  expect(aceptada.ok(), await aceptada.text()).toBeTruthy();
+
+  await login(page, request, 'viewer@asotracmet.test');
+  await page.getByTestId('nav-tablero').click();
+  await expect(page).toHaveURL(/\/tablero$/);
+  await expect(page.getByTestId('tablero-ofrecidas')).toHaveText('1');
+  await expect(page.getByTestId('tablero-aceptadas')).toHaveText('1');
+  const fila = page.getByTestId('tablero-placa-FST189');
+  await expect(fila).toContainText('FST189');
+  await expect(fila.locator('td').nth(1)).toHaveText('1');
+  await expect(fila.locator('td').nth(2)).toHaveText('1');
+  await expect(fila.locator('td').nth(5)).toHaveText('100 %');
+});
+
+test('finance exporta el CSV del mes con marca de agua y el asociado descarga su extracto', async ({
+  page,
+  request,
+}) => {
+  await login(page, request, 'finance@asotracmet.test');
+  await page.getByTestId('nav-finance').click();
+  const descargaCsv = page.waitForEvent('download');
+  await page.getByTestId('finance-exportar').click();
+  const csv = await descargaCsv;
+  expect(csv.suggestedFilename()).toMatch(/^viajes-\d{4}-\d{2}\.csv$/);
+  const contenido = await (await csv.createReadStream()).toArray();
+  expect(Buffer.concat(contenido).toString('utf8')).toContain(
+    '# ASOTRACMET · exportado por finance@asotracmet.test (admin_finance)',
+  );
+  await expect(page.getByTestId('finance-mensaje')).toContainText('descargado');
+  await logout(page);
+
+  await login(page, request, 'member.fst189@asotracmet.test');
+  const descargaExtracto = page.waitForEvent('download');
+  await page.getByTestId('descargar-extracto').click();
+  const extracto = await descargaExtracto;
+  expect(extracto.suggestedFilename()).toBe('mi-extracto-asotracmet.json');
+  const json = JSON.parse(
+    Buffer.concat(await (await extracto.createReadStream()).toArray()).toString('utf8'),
+  ) as { placas: Array<{ placa: string }>; habeasData: { proposito: string } };
+  expect(json.placas.map((p) => p.placa)).toEqual(['FST189', 'TKM221']);
+  expect(json.habeasData.proposito).toContain('enturnamiento');
+});
+
+test('PWA: manifest instalable, service worker activo y "Mi turno" legible sin conexión', async ({
+  browser,
+  request,
+}) => {
+  // El service worker solo existe en el build: este test usa `vite preview` (playwright.config.ts).
+  const context = await browser.newContext({ baseURL: PREVIEW });
+  const page = await context.newPage();
+  await login(page, request, 'member.fst189@asotracmet.test');
+  await expect(page.getByTestId('mi-posicion').first()).toContainText('TM-CBZ');
+
+  // Instalable: manifest enlazado con iconos PNG y service worker registrado.
+  const manifestHref = await page.locator('link[rel="manifest"]').getAttribute('href');
+  expect(manifestHref).toBeTruthy();
+  const manifest = await request.get(new URL(manifestHref!, page.url()).toString());
+  expect(manifest.ok()).toBeTruthy();
+  const datos = (await manifest.json()) as { display: string; icons: Array<{ sizes: string }> };
+  expect(datos.display).toBe('standalone');
+  expect(datos.icons.map((i) => i.sizes)).toEqual(expect.arrayContaining(['192x192', '512x512']));
+  // Sin tipos DOM en el tsconfig raíz: las comprobaciones del navegador van como expresiones.
+  await page.waitForFunction(
+    "navigator.serviceWorker.ready.then((r) => r.active !== null && r.active.state === 'activated')",
+  );
+  // Deja que el service worker cachee las lecturas propias y el shell.
+  await page.reload();
+  await expect(page.getByTestId('mi-posicion').first()).toContainText('TM-CBZ');
+  await page.waitForFunction(
+    "caches.keys().then((nombres) => nombres.some((n) => n.includes('mi-turno-lectura')))",
+  );
+
+  // Sin red: aviso visible y el service worker sirve el shell y la lectura propia desde la caché
+  // (sin red y sin token, un 200 solo puede venir del service worker).
+  await context.setOffline(true);
+  await expect(page.getByTestId('sin-conexion')).toBeVisible();
+  await expect(page.getByTestId('mi-posicion').first()).toContainText('TM-CBZ');
+  expect(await page.evaluate("fetch('/index.html').then((r) => r.status)")).toBe(200);
+  expect(await page.evaluate("fetch('/api/v1/me/cola').then((r) => r.status)")).toBe(200);
+  expect(await page.evaluate("fetch('/api/v1/colas/TM-CBZ').then((r) => r.status, () => 0)")).toBe(
+    0,
+  );
+  await context.setOffline(false);
+  await context.close();
 });

@@ -30,6 +30,8 @@ export interface DepsOperacion {
   motor: MotorCola;
   reloj: Reloj;
   ids: GeneradorIds;
+  /** Observabilidad (spec §15): latencia de `ofrecer` y conteo de declinaciones. */
+  metricas?: { ofrecer(latenciaMs: number, ok: boolean): void; declinacion(): void };
 }
 
 const IdParam = z.object({ id: z.string().min(1) });
@@ -185,7 +187,15 @@ export function rutasOperacion(app: FastifyInstance, deps: DepsOperacion): void 
         const previa = idempotencia.get(claveIdem);
         if (previa) return reply.status(previa.status).send(previa.body);
       }
-      const oferta = await motor.ofrecer({ requerimientoId: id, actor });
+      const inicio = Date.now();
+      let oferta;
+      try {
+        oferta = await motor.ofrecer({ requerimientoId: id, actor });
+      } catch (error) {
+        deps.metricas?.ofrecer(Date.now() - inicio, false);
+        throw error;
+      }
+      deps.metricas?.ofrecer(Date.now() - inicio, true);
       const body = await consultas.ofertaPorId(oferta.id);
       if (claveIdem) idempotencia.set(claveIdem, { status: 201, body });
       return reply.status(201).send(body);
@@ -221,6 +231,7 @@ export function rutasOperacion(app: FastifyInstance, deps: DepsOperacion): void 
         ...entrada,
         actor: actorDe(req),
       });
+      deps.metricas?.declinacion();
       return reply.send({
         oferta: await consultas.ofertaPorId(oferta.id),
         siguiente: siguiente ? ((await consultas.ofertaPorId(siguiente.id)) ?? null) : null,

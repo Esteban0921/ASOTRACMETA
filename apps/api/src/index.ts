@@ -1,5 +1,6 @@
 import { fechaLocal } from '@asotracmet/shared';
 import { construirApp } from './app.js';
+import { mesAnterior, tableroDe } from './rutas/tablero.js';
 
 const { app, motor, config, actorSistema, almacenamiento, reloj } = await construirApp();
 
@@ -18,6 +19,17 @@ async function recalcularDocumentos(): Promise<void> {
   const hoy = fechaLocal(reloj.ahora(), timezone);
   const recalculados = await almacenamiento.maestros.recalcularEstadosDocumentos(hoy);
   app.log.info({ hoy, recalculados }, 'job recalcular-documentos');
+  // Día 1 de cada mes: snapshot de equidad del mes que cerró (§14, `metricas_mes`).
+  if (hoy.endsWith('-01')) {
+    const mes = mesAnterior(hoy.slice(0, 7));
+    const tablero = await tableroDe(almacenamiento, mes);
+    await almacenamiento.metricas.guardarSnapshot({
+      mes,
+      generadoEn: reloj.ahora().toISOString(),
+      filas: tablero.equidad,
+    });
+    app.log.info({ mes, placas: tablero.equidad.length }, 'job snapshot-metricas');
+  }
 }
 const nocturno = setTimeout(() => {
   void recalcularDocumentos().catch((error: unknown) =>

@@ -68,6 +68,31 @@ export async function api<T>(ruta: string, opciones: OpcionesLlamada = {}): Prom
   return json as T;
 }
 
+/** Descarga un archivo de la API (CSV, JSON) con el token de sesión y lo entrega al navegador. */
+export async function descargar(ruta: string, nombreArchivo: string): Promise<void> {
+  const sesion = leerSesion();
+  const respuesta = await fetch(`/api/v1${ruta}`, {
+    headers: sesion ? { authorization: `Bearer ${sesion.token}` } : {},
+  });
+  if (!respuesta.ok) {
+    const error = (await respuesta.json().catch(() => null)) as ErrorApi | null;
+    throw new ErrorApiCliente(
+      respuesta.status,
+      error?.code ?? 'INTERNAL',
+      error?.message ?? respuesta.statusText,
+      error?.details,
+    );
+  }
+  const url = URL.createObjectURL(await respuesta.blob());
+  const enlace = document.createElement('a');
+  enlace.href = url;
+  enlace.download = nombreArchivo;
+  document.body.appendChild(enlace);
+  enlace.click();
+  enlace.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function codigoDeError(error: unknown): string {
   return error instanceof ErrorApiCliente ? error.code : 'INTERNAL';
 }

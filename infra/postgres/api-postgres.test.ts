@@ -66,7 +66,7 @@ describe.skipIf(!url)('API sobre Postgres (spec §20)', () => {
   /** Deja solo los maestros: la operación y las sesiones se rehacen en cada test. */
   async function limpiarOperacion(): Promise<void> {
     await pool.query(
-      'truncate audit_log, ofertas, trs, requerimientos, cola_posiciones, sesiones, otp_codes restart identity cascade',
+      'truncate audit_log, ofertas, trs, requerimientos, cola_posiciones, sesiones, otp_codes, metricas_mes restart identity cascade',
     );
     await pool.query(
       `update parametros set value = '{"prefix": "TR-", "next": 41947}'::jsonb where key = 'secuencia_tr'`,
@@ -115,7 +115,7 @@ describe.skipIf(!url)('API sobre Postgres (spec §20)', () => {
 
   it('readyz confirma que la base responde', async () => {
     const res = await app.inject({ method: 'GET', url: '/readyz' });
-    expect(res.json()).toMatchObject({ ok: true, almacen: 'postgres', db: 'ok' });
+    expect(res.json()).toMatchObject({ ok: true, almacen: 'postgres', db: { ok: true } });
   });
 
   it('sesiones y enlaces viven en Postgres: logout revoca y el enlace es de un solo uso', async () => {
@@ -819,5 +819,49 @@ describe.skipIf(!url)('API sobre Postgres (spec §20)', () => {
       "select accion from audit_log where accion = 'documentos.recalcular'",
     );
     expect(audit).toHaveLength(1);
+  });
+
+  it('el snapshot mensual de equidad se persiste en metricas_mes y el tablero lo lee (TASK-0029)', async () => {
+    const ops = await login('ops@asotracmet.test');
+    const oferta = await app.inject({
+      method: 'POST',
+      url: `/api/v1/requerimientos/${REQ_HLB}/ofertas`,
+      headers: conToken(ops),
+    });
+    const dueno = await login('member.fst189@asotracmet.test');
+    await app.inject({
+      method: 'POST',
+      url: `/api/v1/ofertas/${(oferta.json() as { id: string }).id}/aceptar`,
+      headers: conToken(dueno),
+    });
+    const superadmin = await login('superadmin@asotracmet.test');
+    const job = await app.inject({
+      method: 'POST',
+      url: '/api/v1/jobs/snapshot-metricas',
+      headers: conToken(superadmin),
+      payload: { mes: '2026-09' },
+    });
+    expect(job.statusCode, job.body).toBe(200);
+    const { rows } = await pool.query<{ placa: string; ofrecidas: number; tomadas: number }>(
+      `select v.placa, m.ofrecidas, m.tomadas from metricas_mes m join vehiculos v on v.id = m.vehiculo_id where m.mes = '2026-09'`,
+    );
+    expect(rows).toEqual([{ placa: 'FST189', ofrecidas: 1, tomadas: 1 }]);
+    const viewer = await login('viewer@asotracmet.test');
+    const snapshot = await app.inject({
+      method: 'GET',
+      url: '/api/v1/tablero/snapshots?mes=2026-09',
+      headers: conToken(viewer),
+    });
+    expect(snapshot.statusCode, snapshot.body).toBe(200);
+    expect(snapshot.json()).toMatchObject({
+      mes: '2026-09',
+      filas: [{ placa: 'FST189', tomadas: 1 }],
+    });
+    const vivo = await app.inject({
+      method: 'GET',
+      url: '/api/v1/tablero?mes=2026-09',
+      headers: conToken(viewer),
+    });
+    expect(vivo.json()).toMatchObject({ ofertas: { ofrecidas: 1, aceptadas: 1 } });
   });
 });

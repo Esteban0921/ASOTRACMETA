@@ -11,6 +11,8 @@ export interface OpcionesErrores {
    * sea un archivo devuelve `index.html`: el router de React resuelve la ruta.
    */
   spaIndex?: boolean;
+  /** Observabilidad: cada error de negocio con código estable se cuenta (`COLA_LOCKED`, etc.). */
+  alErrorDominio?: (codigo: string) => void;
 }
 
 export function registrarManejoErrores(app: FastifyInstance, opciones: OpcionesErrores = {}): void {
@@ -25,6 +27,7 @@ export function registrarManejoErrores(app: FastifyInstance, opciones: OpcionesE
 
   app.setErrorHandler((error: FastifyError | Error, req: FastifyRequest, reply: FastifyReply) => {
     if (esErrorDominio(error)) {
+      opciones.alErrorDominio?.(error.code);
       const cuerpo: ErrorApi = { code: error.code, message: error.message, details: error.details };
       void reply.status(httpStatusDe(error.code)).send(cuerpo);
       return;
