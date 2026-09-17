@@ -1,3 +1,4 @@
+import { SOPORTE_MAX_BYTES } from '@asotracmet/shared';
 import { claveDesdeEntorno } from './auth/cifrado.js';
 
 export interface Config {
@@ -33,6 +34,19 @@ export interface Config {
   whatsappPhoneId: string | null;
   /** Cada cuánto el worker consume la outbox de avisos. */
   notificacionesIntervaloMs: number;
+  /** Soportes HSEQ (TASK-0043): bucket S3 compatible si hay S3_BUCKET; si no, disco local. */
+  s3: {
+    endpoint: string;
+    region: string;
+    bucket: string;
+    accessKey: string;
+    secretKey: string;
+    pathStyle: boolean;
+  } | null;
+  soportesDir: string;
+  soporteMaxBytes: number;
+  /** Vida de las URLs de subida y descarga prefirmadas. */
+  soporteUrlSegundos: number;
   /** Si está definido, `/metrics` exige `authorization: Bearer <token>`. */
   metricsToken: string | null;
   /** Base OTLP/HTTP del colector OpenTelemetry (`http://host:4318`); sin ella no se exporta nada. */
@@ -77,6 +91,19 @@ export function cargarConfig(
     whatsappToken: env.WHATSAPP_TOKEN ? env.WHATSAPP_TOKEN : null,
     whatsappPhoneId: env.WHATSAPP_PHONE_ID ? env.WHATSAPP_PHONE_ID : null,
     notificacionesIntervaloMs: Number(env.NOTIFICACIONES_INTERVALO_MS ?? 5_000),
+    s3: env.S3_BUCKET
+      ? {
+          endpoint: env.S3_ENDPOINT ?? 'https://s3.amazonaws.com',
+          region: env.S3_REGION ?? 'us-east-1',
+          bucket: env.S3_BUCKET,
+          accessKey: env.S3_ACCESS_KEY ?? '',
+          secretKey: env.S3_SECRET_KEY ?? '',
+          pathStyle: env.S3_FORCE_PATH_STYLE === 'true',
+        }
+      : null,
+    soportesDir: env.SOPORTES_DIR ?? '.datos/soportes',
+    soporteMaxBytes: Number(env.SOPORTE_MAX_BYTES ?? SOPORTE_MAX_BYTES),
+    soporteUrlSegundos: Number(env.SOPORTE_URL_SEGUNDOS ?? 300),
     metricsToken: env.METRICS_TOKEN ? env.METRICS_TOKEN : null,
     otelEndpoint: env.OTEL_EXPORTER_OTLP_ENDPOINT ? env.OTEL_EXPORTER_OTLP_ENDPOINT : null,
     otelServicio: env.OTEL_SERVICE_NAME ?? 'asotracmet-api',

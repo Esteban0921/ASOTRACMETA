@@ -312,6 +312,13 @@ test('HSEQ da de alta una placa que entra al final de la cola; un SOAT vencido l
   await page.getByTestId('doc-vence').fill('2026-09-01');
   await page.getByTestId('doc-enviar').click();
   await expect(page.getByTestId('ficha-doc-estado-SOAT')).toContainText('Vencido');
+  // Soporte del documento (TASK-0043): sube un PDF y queda descargable desde la ficha.
+  await page.getByTestId('doc-archivo-SOAT').setInputFiles({
+    name: 'soat.pdf',
+    mimeType: 'application/pdf',
+    buffer: Buffer.from('%PDF-1.4\n% soporte de prueba\n'),
+  });
+  await expect(page.getByTestId('doc-descargar-SOAT')).toBeVisible();
   await expect(page.getByTestId('ficha-semaforo')).toContainText('Vencido');
   await expect(page.getByTestId('hseq-semaforo-ZZA111')).toContainText('Vencido');
   await logout(page);

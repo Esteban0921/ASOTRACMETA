@@ -12,3 +12,4 @@ export * from './recaudo.js';
 export * from './documentos.js';
 export * from './notificaciones.js';
 export * from './vistas.js';
+export * from './soportes.js';

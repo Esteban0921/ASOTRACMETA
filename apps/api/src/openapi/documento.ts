@@ -29,10 +29,16 @@ function aJsonSchema(schema: ZodType, io: 'input' | 'output'): Json {
 /** `/api/v1/colas/:clase` → `/api/v1/colas/{clase}` y sus parámetros de ruta. */
 export function rutaOpenApi(ruta: string): { ruta: string; parametros: string[] } {
   const parametros: string[] = [];
-  const convertida = ruta.replace(/:([A-Za-z]+)/g, (_todo, nombre: string) => {
-    parametros.push(nombre);
-    return `{${nombre}}`;
-  });
+  const convertida = ruta
+    .replace(/:([A-Za-z]+)/g, (_todo, nombre: string) => {
+      parametros.push(nombre);
+      return `{${nombre}}`;
+    })
+    // Comodín de Fastify (`/soportes/*`): la clave del objeto, con sus barras.
+    .replace(/\/\*$/, () => {
+      parametros.push('clave');
+      return '/{clave}';
+    });
   return { ruta: convertida, parametros };
 }
 

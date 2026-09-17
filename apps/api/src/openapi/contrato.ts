@@ -17,6 +17,7 @@ import {
   CambiarRolSchema,
   CanjearEnlaceSchema,
   ClienteSchema,
+  ConfirmarSoporteSchema,
   CrearAsociadoSchema,
   CrearClienteSchema,
   CrearConductorSchema,
@@ -64,10 +65,12 @@ import {
   SemaforoPlacaSchema,
   SesionSchema,
   SnapshotMesSchema,
+  SolicitarSoporteSchema,
   SolicitarAccesoSchema,
   TableroSchema,
   TipoDocumentoSchema,
   TransportadoraSchema,
+  UrlSubidaSchema,
   UsuarioSesionSchema,
   VerificarOtpSchema,
   VerificarTotpSchema,
@@ -171,6 +174,8 @@ export const NOMBRES_ESQUEMAS = new Map<ZodType, string>(
     ResumenMes: ResumenMesSchema,
     PreferenciasNotificacion: PreferenciasNotificacionSchema,
     FiltroNotificaciones: FiltroNotificacionesSchema,
+    SolicitarSoporte: SolicitarSoporteSchema,
+    ConfirmarSoporte: ConfirmarSoporteSchema,
   }).map(([nombre, schema]) => [schema, nombre]),
 );
 
@@ -694,6 +699,43 @@ export const CONTRATO: readonly EntradaContrato[] = [
     guard: 'documentos R (own)',
     query: Dias,
     respuesta: lista('AlertaDocumento', AlertaDocumentoSchema),
+  },
+  {
+    metodo: 'post',
+    ruta: '/api/v1/documentos/:id/soporte',
+    etiqueta: 'HSEQ',
+    resumen:
+      'Pedir dónde subir el soporte (URL prefirmada de S3 o esta API); PDF, JPG o PNG hasta 10 MB',
+    guard: 'documentos U',
+    body: SolicitarSoporteSchema,
+    respuesta: una('UrlSubida', UrlSubidaSchema),
+  },
+  {
+    metodo: 'put',
+    ruta: '/api/v1/soportes/*',
+    etiqueta: 'HSEQ',
+    resumen: 'Subida de bytes al almacén local (con S3 el navegador sube directo al bucket)',
+    guard: 'documentos U',
+    respuesta: una('SoporteGuardado', z.object({ clave: z.string(), tamano: z.number() }), 201),
+  },
+  {
+    metodo: 'post',
+    ruta: '/api/v1/documentos/:id/soporte/confirmar',
+    etiqueta: 'HSEQ',
+    resumen:
+      'Confirmar la subida: verifica el objeto y guarda la referencia en `archivoUrl` (auditado)',
+    guard: 'documentos U',
+    body: ConfirmarSoporteSchema,
+    respuesta: una('VistaDocumento', VistaDocumentoSchema),
+  },
+  {
+    metodo: 'get',
+    ruta: '/api/v1/documentos/:id/soporte',
+    etiqueta: 'HSEQ',
+    resumen:
+      'Descargar el soporte con el rol del actor (302 a URL prefirmada en S3, bytes en local); auditado',
+    guard: 'documentos R (own)',
+    respuesta: libre('Soporte', 'application/pdf o imagen (local), o 302 a la URL prefirmada (S3)'),
   },
   {
     metodo: 'post',

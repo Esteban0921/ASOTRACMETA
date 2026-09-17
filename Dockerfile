@@ -25,7 +25,7 @@ COPY --from=build /repo/apps/api/dist ./dist
 COPY --from=build /repo/apps/web/dist ./web
 COPY --from=build /repo/dist/scripts ./scripts
 COPY --from=build /repo/infra/postgres/migrations ./migrations
-RUN mkdir -p /app && chown -R node:node /app
+RUN mkdir -p /app/datos && chown -R node:node /app
 USER node
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

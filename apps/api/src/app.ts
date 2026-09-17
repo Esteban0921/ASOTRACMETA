@@ -24,6 +24,10 @@ import { mensajeriaDeConfig } from './mensajeria/proveedores.js';
 import { correrAvisos, type ResumenAvisos } from './notificaciones/avisos.js';
 import { WorkerNotificaciones } from './notificaciones/worker.js';
 import { rutasNotificaciones } from './rutas/notificaciones.js';
+import { rutasSoportes } from './rutas/soportes.js';
+import { SoportesLocales } from './soportes/local.js';
+import { SoportesS3 } from './soportes/s3.js';
+import type { AlmacenSoportes } from './soportes/tipos.js';
 import { RegistroMetricas, pingRedis } from './observabilidad.js';
 import { CONTRATO } from './openapi/contrato.js';
 import { construirOpenApi } from './openapi/documento.js';
@@ -60,6 +64,8 @@ export interface OpcionesApp {
   mensajeria?: Mensajeria;
   /** Lock distribuido por clase de cola; por defecto Redis si hay `REDIS_URL`, si no ninguno. */
   lock?: AlmacenLock;
+  /** Almacén de soportes HSEQ; por defecto S3 si hay `S3_BUCKET`, si no disco local. */
+  soportes?: AlmacenSoportes;
 }
 
 export interface RutaRegistrada {
@@ -201,6 +207,13 @@ export async function construirApp(opciones: OpcionesApp = {}): Promise<AppConst
     });
   }
 
+  // Soportes HSEQ (TASK-0043): el almacén local recibe PDF o imagen como Buffer con su límite.
+  app.addContentTypeParser(
+    ['application/pdf', 'image/jpeg', 'image/png'],
+    { parseAs: 'buffer', bodyLimit: config.soporteMaxBytes },
+    (_req, cuerpo, done) => done(null, cuerpo),
+  );
+
   // Un POST de acción (`/ofertas/:id/aceptar`) llega sin cuerpo pero con content-type JSON:
   // se interpreta como `{}` y Zod valida después. JSON malformado sigue siendo 400.
   app.removeContentTypeParser('application/json');
@@ -338,6 +351,20 @@ export async function construirApp(opciones: OpcionesApp = {}): Promise<AppConst
     correrAvisos: correrAvisosHoy,
     uow,
     reloj,
+  });
+  // Soportes HSEQ (TASK-0043): S3 compatible con URLs prefirmadas o disco local (dev, e2e, VPS chico).
+  const soportes =
+    opciones.soportes ??
+    (config.s3 ? new SoportesS3(config.s3) : new SoportesLocales(config.soportesDir));
+  rutasSoportes(app, {
+    soportes,
+    maestros: almacenamiento.maestros,
+    consultas: almacenamiento.consultas,
+    uow,
+    reloj,
+    ids,
+    maxBytes: config.soporteMaxBytes,
+    urlSegundos: config.soporteUrlSegundos,
   });
 
   if (config.modoE2e) {

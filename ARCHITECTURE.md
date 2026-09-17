@@ -342,6 +342,10 @@ documentan RBAC y re-autenticación. La tabla siguiente es el resumen humano del
 | `POST /jobs/notificar`                       | cola U (superadmin)          | una pasada del worker de avisos (outbox → bandeja + canales)      |
 | `POST /jobs/avisos`                          | cola U (superadmin)          | oferta por expirar (T-15), documento por vencer (30/7), digest de recaudo; idempotentes por clave |
 | `GET /openapi.json`                          | público                      | contrato OpenAPI 3.1 generado del código (TASK-0033)              |
+| `POST /documentos/:id/soporte`               | documentos U (hseq, superadmin) | `{ nombre, tipo, tamano }` → `{ clave, metodo: 'PUT', url, cabeceras, expiraEn }`: URL prefirmada de S3 o `/soportes/...` de esta API (TASK-0043) |
+| `PUT /soportes/*`                            | documentos U                 | solo almacén local: recibe PDF/JPG/PNG (≤ 10 MB) como bytes        |
+| `POST /documentos/:id/soporte/confirmar`     | documentos U                 | verifica que el objeto existe y guarda `archivoUrl` (`s3://bucket/clave` o `local://clave`); audita `documento.soporte` |
+| `GET /documentos/:id/soporte`                | documentos R (own)           | descarga con el rol del actor: bytes (local) o 302 a URL prefirmada (S3); member solo sus placas; audita `documento.descargar` |
 | `POST /__e2e/reset`                          | solo `modoE2e`               | vuelve al seed                                                    |
 
 Todas las rutas de spec §8 están implementadas.
@@ -440,6 +444,22 @@ de la bandeja por `app.usuario_id` (nuevo `set_config` por petición, `app_usuar
 worker corre en `index.ts` cada `NOTIFICACIONES_INTERVALO_MS` (5 s); en tests y e2e se dispara
 con `POST /jobs/notificar`. Web: `/notificaciones` (bandeja + preferencias) y el enlace "Avisos
 (n)" en la barra para todos los roles.
+
+### 6.12 Soportes HSEQ (`rutas/soportes.ts`, `soportes/`)
+
+Spec §6.3 (el archivo nunca va dentro de la base), §12 (sin claves en la base) y §18 (S3
+compatible), TASK-0043. Flujo en tres pasos: la API entrega dónde subir (`POST
+/documentos/:id/soporte`: clave `documentos/<id>/<uuid>.<ext>`, tipo y tamaño validados), el
+navegador sube directo (`subirSoporte()` en `apps/web/src/api/soportes.ts`) y confirma (`POST
+.../confirmar`: la API comprueba con `describir()` que el objeto existe y pesa lo declarado antes
+de guardar la referencia). Puerto `AlmacenSoportes` con dos adaptadores: `SoportesS3` (AWS
+Signature V4 escrita a mano en `soportes/s3.ts`: URL prefirmada de PUT con `content-type`
+firmado, HEAD firmado por cabecera, URL prefirmada de GET; path-style para MinIO) y
+`SoportesLocales` (disco en `SOPORTES_DIR`, `PUT /soportes/*` recibe los bytes, `<clave>.meta.json`
+guarda el tipo). La descarga siempre pasa por la API con el rol del actor (member solo de sus
+placas) y se audita (`documento.descargar`): son documentos sensibles. La clave se valida con
+`CLAVE_SOPORTE_REGEX` antes de tocar disco (sin `..`). Sin `S3_BUCKET` la API usa el almacén local;
+en producción es el volumen `soportes` de `compose.prod.yaml`.
 
 ## 7. Frontend (`apps/web`)
 
@@ -551,6 +571,7 @@ sobre Postgres se validan con `pnpm test:db` (CI job `db`).
 | `domain`                | `packages/domain/src/notificaciones.test.ts` | outbox: ofrecer → `oferta.abierta`, aceptar → `tr.asignado` (asociado + ops), declinar → `oferta.declinada` con motivo + reoferta, cancelar → `tr.cancelado`; rollback se lleva el aviso; la clave deduplica |
 | `api`                   | `apps/api/src/notificaciones.test.ts`, `mensajeria/proveedores.test.ts` | worker: outbox → bandeja del asociado + correo, bandeja personal, marcar leída idempotente y solo propia; `tr.asignado` a asociado y ops; declinar avisa a ops; preferencias (sin correo no hay mensaje, WhatsApp por celular, validación, auditoría sin PII); canal caído → `fallida`; repositorio caído → reintento y cierre con error; jobs por tiempo idempotentes; SMTP y WhatsApp con transportes falsos |
 | `api`                   | `apps/api/src/openapi.test.ts`     | contrato: cada ruta registrada está documentada y viceversa; `openapi.json` 3.1 sin `$ref` colgantes, cuerpos y respuestas como componentes, parámetros de ruta y query, seguridad; 26 respuestas reales validadas contra las vistas compartidas (`vistas.ts`) |
+| `api`                   | `apps/api/src/soportes.test.ts`, `soportes/s3.test.ts` | pedir URL → subir PDF → confirmar → descarga con el rol del actor (member solo sus placas), auditoría de subida y descarga; rechazos (tipo, tamaño, clave ajena, cuerpo vacío, traversal, rol sin permiso); `archivoUrl` externa → 302. SigV4: vector oficial de AWS (URL prefirmada), firma por cabecera, MinIO path-style y AWS virtual-hosted con `fetch` falso |
 | `api` (`test:redis`)    | `apps/api/src/lock-cola.test.ts`   | lock `cola:{clase}`: se toma durante la transacción y se suelta aunque falle, ajeno → `COLA_LOCKED` sin abrir transacción, TTL vence huérfanos, nadie suelta un token ajeno, fail-open con Redis caído; contra Redis real (`REDIS_URL`): `SET NX PX` + compare-and-delete y la API responde 409 `{origen: redis}` mientras otra instancia tiene la clave |
 | `db`                    | `infra/postgres/migraciones.test.ts` | migraciones idempotentes, tablas, audit append-only, RLS member con `set local role`, unicidad diferible, checks de placa. Se omite sin `DATABASE_URL` |
 | `db`                    | `infra/postgres/api-postgres.test.ts` | la API completa sobre Postgres real: sesiones y enlaces persistidos (logout revoca, enlace de un solo uso), enrolamiento TOTP cifrado en la base, cola con elegibilidad, ofrecer→aceptar persistido (posiciones, audit, secuencia TR), declinar con reoferta, cancelar TR, viewer no muta, member no lee ajenos, "Tu posición: 2 de 10" bajo RLS, `COLA_LOCKED` con la clase bloqueada por otra tx, 20 coordinadores en paralelo sobre un cupo → una sola oferta, parámetros auditados; override y reset persistidos con el factor de re-autenticación; usuarios y placas de asociado persistidos (crear, entrar, cambiar rol) |
@@ -569,7 +590,7 @@ error un servidor que no esté en modo e2e.
 
 Variables (`.env.example`): `PORT`, `HOST`, `AUTH_SECRET`, `CIFRADO_CLAVE` (32 bytes base64; en
 desarrollo se deriva de `AUTH_SECRET`), `CORS_ORIGINS`, `WEB_URL` (base de los enlaces de acceso),
-`MENSAJERIA` (`consola` | `memoria`), `SMTP_URL`, `SMTP_FROM`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `NOTIFICACIONES_INTERVALO_MS` (TASK-0026), `OTP_TTL_MINUTOS`, `MAGIC_LINK_TTL_MINUTOS`, `REAUTH_MINUTOS`,
+`MENSAJERIA` (`consola` | `memoria`), `SMTP_URL`, `SMTP_FROM`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `NOTIFICACIONES_INTERVALO_MS` (TASK-0026), `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_FORCE_PATH_STYLE`, `SOPORTES_DIR`, `SOPORTE_MAX_BYTES`, `SOPORTE_URL_SEGUNDOS` (TASK-0043), `OTP_TTL_MINUTOS`, `MAGIC_LINK_TTL_MINUTOS`, `REAUTH_MINUTOS`,
 `PERSISTENCIA` (`memoria` | `postgres`), `DATABASE_URL`, `REDIS_URL`, `LOG_LEVEL`,
 `LOGIN_RATE_LIMIT_MAX`, `ASOTRACMET_E2E`. La semilla cifra los secretos TOTP con la misma clave que
 la API: `pnpm db:seed` y la API deben correr con el mismo `AUTH_SECRET`/`CIFRADO_CLAVE`. Modos de la API: memoria (por defecto), postgres (`PERSISTENCIA=postgres` +
@@ -594,17 +615,17 @@ Pendiente (spec §14): digest diario a ops y archivado de `audit_log` a 24 meses
 
 | Componente               | Hoy                                             | Objetivo                                       | Tarea               |
 | ------------------------ | ----------------------------------------------- | ---------------------------------------------- | ------------------- |
-| Motor de cola            | completo (§7) con tests, override y reset auditados | anti-replay TOTP en re-autenticación       | TASK-0040           |
-| Persistencia             | memoria (dev/e2e) o Postgres con RLS y locks     | + Redis para lock multi-instancia              | TASK-0020           |
+| Motor de cola            | completo (§7) con tests, override y reset auditados; anti-replay TOTP en login y re-autenticación | —                                          | TASK-0040 (hecha)   |
+| Persistencia             | memoria (dev/e2e) o Postgres con RLS y locks; lock Redis `cola:{clase}` entre instancias | —                                          | TASK-0020 (hecha)   |
 | Auth                     | contraseña + TOTP, código por correo, enlace mágico, sesiones revocables, re-auth | —                                        | TASK-0026, 0040 (hechas) |
 | IAM y maestros           | usuarios, roles, scope member y CRUD de maestros por rol (API + `/hseq`, `/admin/usuarios`) | catálogo de destinos canónicos tras la migración | TASK-0023 (hecha)   |
-| Pantallas                | login, ops, member, hseq, finance, tablero, admin (cola, usuarios, parámetros, auditoría); PWA instalable con lectura offline de Mi turno | notificaciones in-app (TASK-0026) | —                   |
+| Pantallas                | login, ops, member, hseq (con subida y descarga de soportes), finance, tablero, admin (cola, usuarios, parámetros, auditoría), notificaciones y preferencias; PWA instalable con lectura offline de Mi turno | — | —                   |
 | Viajes / recaudo         | viaje desde TR, flete vs tarifa, liquidación con snapshot del parámetro, pagos y resumen mensual (API + `/finance`, memoria y Postgres con RLS) | export CSV, tablero viewer | TASK-0027 (hecha), 0029, 0034 |
 | HSEQ                     | documentos con semáforo 30/7/vencido (calculado al leer), alertas en `/hseq` y `/me`, habilitación por cliente con motivo, job nocturno de recálculo; verificado con datos reales (8 placas rechazadas por documento vencido) | subida de soportes a object storage | TASK-0028 (hecha), 0043 |
 | Notificaciones           | outbox transaccional + worker, bandeja in-app con RLS por usuario, correo (SMTP) y WhatsApp (Cloud API) opt-in por preferencia, jobs por tiempo idempotentes | plantillas aprobadas de WhatsApp fuera de la ventana de 24 h; digest a ops | TASK-0026 (hecha)   |
 | Migración Excel          | `pnpm db:migrate-xlsx`: plan puro, carga repetible, informe (docs/migracion-excel.md) | atar TR reales cuando haya planilla con placa; catálogo de destinos canónicos | TASK-0025 |
 | Observabilidad           | `/readyz` con base y Redis, `/metrics` Prometheus (COLA_LOCKED, latencia de ofrecer, declinaciones, ofertas abiertas), OTel (span `cola.transaccion` + métricas OTLP) opcional, runbooks en `docs/runbooks/` | alertas configuradas en el colector | TASK-0030 (hecha)   |
-| Despliegue               | `pnpm build` (esbuild + Vite), `Dockerfile` multi-stage, `infra/compose.prod.yaml`, backups cifrados y restore (`docs/despliegue.md`) | Fly/Render con la misma imagen; readyz con Redis | TASK-0032 (hecha), 0030 |
+| Despliegue               | `pnpm build` (esbuild + Vite + contrato), `Dockerfile` multi-stage, `infra/compose.prod.yaml` (Postgres, Redis, volumen de soportes), backups cifrados y restore (`docs/despliegue.md`), `readyz` con base y Redis | Fly/Render con la misma imagen | TASK-0032 (hecha), 0030 (hecha) |
 
 ## 14. Runbooks
 

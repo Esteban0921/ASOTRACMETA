@@ -9,6 +9,7 @@ import {
   type EstadoVehiculo,
 } from '@asotracmet/shared';
 import { api, codigoDeError } from '../api/cliente';
+import { descargarSoporte, subirSoporte } from '../api/soportes';
 import type {
   AlertaDocumento,
   Cliente,
@@ -131,6 +132,13 @@ export function Hseq() {
     mutationFn: ({ id, vence }: { id: string; vence: string }) =>
       api<VistaDocumento>(`/documentos/${id}`, { method: 'PATCH', body: { venceEn: vence } }),
     onSuccess: (doc) => exito(`Vencimiento actualizado: ${textoEstadoDocumento(doc.estado)}.`),
+    onError: fallo,
+  });
+
+  // Soporte del documento (TASK-0043): sube directo al almacén y confirma; la ficha se refresca.
+  const subir = useMutation({
+    mutationFn: ({ id, archivo }: { id: string; archivo: File }) => subirSoporte(id, archivo),
+    onSuccess: (doc) => exito(`Soporte de ${doc.tipo?.codigo ?? 'documento'} guardado.`),
     onError: fallo,
   });
 
@@ -355,6 +363,7 @@ export function Hseq() {
                     <th>Número</th>
                     <th>Vence</th>
                     <th>Estado</th>
+                    <th>Soporte</th>
                     {puedeEditar && <th>Renovar</th>}
                   </tr>
                 </thead>
@@ -376,6 +385,37 @@ export function Hseq() {
                         >
                           {textoEstadoDocumento(d.estado)}
                         </span>
+                      </td>
+                      <td>
+                        {d.archivoUrl && (
+                          <button
+                            type="button"
+                            className="secundario"
+                            data-testid={`doc-descargar-${d.tipo?.codigo ?? d.id}`}
+                            onClick={() =>
+                              void descargarSoporte(
+                                d.id,
+                                `${d.tipo?.codigo ?? 'soporte'}-${datos.vehiculo.placa}`,
+                              ).catch(fallo)
+                            }
+                          >
+                            Descargar
+                          </button>
+                        )}
+                        {puedeEditar && (
+                          <input
+                            type="file"
+                            accept="application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png"
+                            aria-label={`Soporte de ${d.tipo?.codigo ?? ''}`}
+                            data-testid={`doc-archivo-${d.tipo?.codigo ?? d.id}`}
+                            disabled={subir.isPending}
+                            onChange={(e) => {
+                              const archivo = e.target.files?.[0];
+                              if (archivo) subir.mutate({ id: d.id, archivo });
+                              e.target.value = '';
+                            }}
+                          />
+                        )}
                       </td>
                       {puedeEditar && (
                         <td>

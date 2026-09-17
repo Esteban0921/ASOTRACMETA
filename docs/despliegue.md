@@ -34,6 +34,8 @@ Las de `.env.example`, más las que solo aplican en producción:
 | `WHATSAPP_TOKEN`    | WhatsApp    | token de la WhatsApp Cloud API (Meta); con `WHATSAPP_PHONE_ID` activa el canal celular (opt-in por usuario). Fuera de la ventana de 24 h de una conversación Meta exige plantillas aprobadas: hasta tenerlas, el aviso puede no entregarse y queda `fallida` en la bandeja |
 | `WHATSAPP_PHONE_ID` | WhatsApp    | id del número emisor en Meta                                                               |
 | `NOTIFICACIONES_INTERVALO_MS` | no | cada cuánto el worker consume la outbox de avisos (5000)                                |
+| `S3_BUCKET`         | soportes    | con `S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` (y `S3_FORCE_PATH_STYLE=true` en MinIO): los soportes HSEQ van al bucket con URLs prefirmadas (TASK-0043). Sin bucket, al volumen `soportes` (`SOPORTES_DIR=/app/datos/soportes`), que hay que incluir en los backups |
+| `SOPORTE_MAX_BYTES` | no          | tamaño máximo de un soporte (10 MB)                                                        |
 | `APP_PORT`          | no          | `127.0.0.1:3001`: solo el proxy local llega a la app                                        |
 | `BACKUP_PASSPHRASE` | backups     | frase de cifrado de los backups; nunca en el servidor en claro (variable del cron)          |
 

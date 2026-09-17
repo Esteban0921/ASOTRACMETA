@@ -40,7 +40,7 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 | TASK-0024 | Reset y override de cola auditados (superadmin, 2FA)          | 1    | alta      | hecha       |
 | TASK-0025 | Migración controlada desde el Excel + informe de excepciones  | 0-1  | alta      | hecha       |
 | TASK-0042 | Puertos del host configurables en `infra/compose.yaml`        | 0    | media     | hecha       |
-| TASK-0043 | Soportes HSEQ en object storage (subida de archivos)         | 3    | media     | pendiente   |
+| TASK-0043 | Soportes HSEQ en object storage (subida de archivos)         | 3    | media     | hecha         |
 | TASK-0026 | Notificaciones (in-app, email, WhatsApp opt-in) con outbox    | 1-2  | media     | hecha         |
 | TASK-0027 | Viajes, tarifas, recaudo 3% y pantalla finance                | 2    | alta      | hecha         |
 | TASK-0028 | HSEQ: documentos, semáforo, habilitaciones, job nocturno      | 3    | alta      | hecha         |
@@ -419,16 +419,17 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 
 ### TASK-0043 — Soportes HSEQ en object storage (subida de archivos)
 
-- **Estado:** pendiente
+- **Estado:** hecha (2026-09-17)
 - **Fase:** 3
 - **Prioridad:** media
 - **Contexto:** Descubierto al cerrar TASK-0028 (RULE-007). Hoy `documentos.archivo_url` acepta una URL ya alojada (spec §6.3: el archivo nunca va dentro de la base). Falta el flujo de subida real: bucket S3-compatible (spec §18), URL prefirmada desde la API, límite de tamaño y tipo, y descarga con el rol del actor. Sin claves en la base (spec §12).
 - **Criterio de done:**
-  - [ ] `POST /documentos/:id/soporte` devuelve URL prefirmada y guarda `archivo_url` al confirmar
-  - [ ] Tests de API con un almacén S3 falso; e2e sube un PDF desde `/hseq`
-  - [ ] Variables `S3_*` documentadas en `docs/despliegue.md` y ARCHITECTURE §11
-- **Referencias:** spec §6.3, §12, §18; TASK-0028
-- **Evidencia:** —
+  - [x] `POST /documentos/:id/soporte` devuelve URL prefirmada (S3) o ruta de la API (local) y `POST .../confirmar` guarda `archivo_url` tras verificar el objeto
+  - [x] Tests de API con un almacén S3 falso (`fetch` simulado) y con el almacén local en un directorio temporal; e2e sube un PDF desde `/hseq`
+  - [x] Variables `S3_*` y `SOPORTES_DIR` documentadas en `docs/despliegue.md`, ARCHITECTURE §11 y `.env.example`
+  - [x] Descarga con el rol del actor (`GET /documentos/:id/soporte`: member solo sus placas) y auditada; límite de 10 MB y tipos PDF/JPG/PNG
+- **Referencias:** spec §6.3, §12, §18; ARCHITECTURE §6.12; TASK-0028
+- **Evidencia:** Puerto `AlmacenSoportes` (`apps/api/src/soportes/tipos.ts`) con `SoportesS3` (AWS Signature V4 a mano: URL prefirmada de PUT con `content-type` firmado, HEAD firmado por cabecera, URL prefirmada de GET; path-style para MinIO) y `SoportesLocales` (disco, `PUT /soportes/*`, `<clave>.meta.json`). Rutas en `rutas/soportes.ts`; `subirSoporte()` y botón "Descargar" en la ficha de `/hseq`. `soportes/s3.test.ts` (5): reproduce la URL prefirmada del vector oficial de AWS (firma `aeeed9bb…`), codificación RFC 3986, firma por cabecera, MinIO path-style con HEAD/404/403 simulados, AWS virtual-hosted. `soportes.test.ts` (3): pedir → subir → confirmar → `archivoUrl = local://…`, descarga en PDF para hseq y para el asociado dueño, 403 para otro asociado, 401 sin token, auditoría `documento.soporte` y `documento.descargar`; rechazos de tipo, tamaño, clave ajena, cuerpo vacío, traversal (`..%2F`) y rol sin permiso; `archivoUrl` externa → 302. Contrato OpenAPI con las 4 rutas nuevas (`docs/openapi.json`: 80 rutas, 85 esquemas). Infra: `.datos/` ignorado, volumen `soportes` y variables `S3_*` en `compose.prod.yaml`, `/app/datos` del usuario `node` en el `Dockerfile`. `pnpm check` → 234 passed (2026-09-17); `pnpm test:db` → 28 passed; `pnpm test:e2e` → 16 passed (el test de HSEQ sube `soat.pdf` y ve el botón de descarga); imagen Docker construida y arrancada en memoria (healthz, openapi.json, /app/datos escribible por node).
 
 ### TASK-0026 — Notificaciones
 
