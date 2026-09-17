@@ -26,7 +26,7 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 | TASK-0014 | Tests unitarios web (formato, OfertaCard)                     | 1    | media     | hecha       |
 | TASK-0015 | E2E Playwright: ops ofrece → member acepta → aparece TR       | 1    | crítica   | hecha       |
 | TASK-0016 | Migraciones SQL (spec §6), runner y tests db (RLS, audit)     | 1    | alta      | hecha       |
-| TASK-0017 | CI GitHub Actions: check, e2e, db                             | 0    | alta      | en_progreso |
+| TASK-0017 | CI GitHub Actions: check, e2e, db                             | 0    | alta      | hecha       |
 | TASK-0018 | Documentación: ARCHITECTURE, AGENTS, ISSUES, README, ADR      | 0    | alta      | hecha       |
 | TASK-0019 | Adaptador Postgres de `Transaccion` / `UnidadDeTrabajo`       | 1    | crítica   | hecha       |
 | TASK-0038 | Capa de consultas: la API deja de leer el estado en memoria   | 1    | crítica   | hecha       |
@@ -263,15 +263,15 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 
 ### TASK-0017 — CI GitHub Actions
 
-- **Estado:** en_progreso
+- **Estado:** hecha (2026-09-17)
 - **Fase:** 0
 - **Prioridad:** alta
 - **Contexto:** `.github/workflows/ci.yml` con cuatro jobs: `check` (lint, formato, tipos, build, contrato OpenAPI al día, unit con cobertura), `e2e` (Chromium), `db` (servicios Postgres 16 y Redis 7 → `db:migrate` + `db:seed` + `test:db` + `test:redis`) e `imagen` (build Docker + `/healthz`). Artefactos: cobertura e informe de Playwright.
 - **Criterio de done:**
   - [x] Workflow escrito y equivalente a los comandos locales
-  - [ ] Primer push a GitHub con los tres jobs en verde
+  - [x] Primer push a GitHub con los cuatro jobs en verde
 - **Referencias:** AGENTS RULE-018; ARCHITECTURE §10
-- **Evidencia:** Los mismos comandos pasan en local (última corrida completa 2026-09-17: `pnpm check` 234 passed, `pnpm test:db` 28, `pnpm test:redis` 7, `pnpm test:e2e` 16, `pnpm build` e imagen Docker en verde). Falta el primer `git push -u origin main` (13 commits locales por delante) y ver los cuatro jobs en verde en GitHub.
+- **Evidencia:** Los mismos comandos pasan en local (última corrida completa 2026-09-17: `pnpm check` 234 passed, `pnpm test:db` 28, `pnpm test:redis` 7, `pnpm test:e2e` 16, `pnpm build` e imagen Docker en verde). Primer push 2026-09-17: `git push -u origin main` → `f5d39ef..8ef9f33 main -> main` (14 commits). Run de CI #2 sobre `8ef9f33` (<https://github.com/Esteban0921/ASOTRACMETA/actions/runs/35255029966>): `conclusion: success`, los cuatro jobs en `success`: `Lint · Formato · Tipos · Unit` (57 s), `E2E Playwright` (1 min 04 s), `Migraciones Postgres y lock Redis` (40 s) e `Imagen Docker` (40 s) (leído por la API de GitHub Actions).
 
 ### TASK-0018 — Documentación
 
