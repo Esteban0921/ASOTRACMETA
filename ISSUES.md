@@ -266,12 +266,12 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 - **Estado:** en_progreso
 - **Fase:** 0
 - **Prioridad:** alta
-- **Contexto:** `.github/workflows/ci.yml` con tres jobs: `check` (lint, formato, tipos, unit con cobertura), `e2e` (Chromium) y `db` (servicio Postgres 16 → `db:migrate` + `test:db`). Artefactos: cobertura e informe de Playwright.
+- **Contexto:** `.github/workflows/ci.yml` con cuatro jobs: `check` (lint, formato, tipos, build, contrato OpenAPI al día, unit con cobertura), `e2e` (Chromium), `db` (servicios Postgres 16 y Redis 7 → `db:migrate` + `db:seed` + `test:db` + `test:redis`) e `imagen` (build Docker + `/healthz`). Artefactos: cobertura e informe de Playwright.
 - **Criterio de done:**
   - [x] Workflow escrito y equivalente a los comandos locales
   - [ ] Primer push a GitHub con los tres jobs en verde
 - **Referencias:** AGENTS RULE-018; ARCHITECTURE §10
-- **Evidencia:** Los mismos comandos pasan en local (ver TASK-0009, 0012, 0014, 0015). El repositorio aún no tiene remoto; bloqueo suave hasta el primer push.
+- **Evidencia:** Los mismos comandos pasan en local (última corrida completa 2026-09-17: `pnpm check` 234 passed, `pnpm test:db` 28, `pnpm test:redis` 7, `pnpm test:e2e` 16, `pnpm build` e imagen Docker en verde). Falta el primer `git push -u origin main` (13 commits locales por delante) y ver los cuatro jobs en verde en GitHub.
 
 ### TASK-0018 — Documentación
 
