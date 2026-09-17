@@ -10,7 +10,8 @@
   },
   "scripts": {
     "dev": "pnpm -r --parallel --filter ./apps/* dev",
-    "build": "pnpm -r build && pnpm build:scripts",
+    "build": "pnpm -r build && pnpm build:scripts && pnpm build:contrato",
+    "build:contrato": "tsx scripts/openapi.ts",
     "build:scripts": "esbuild scripts/migrate-db.ts scripts/seed-db.ts --bundle --platform=node --format=esm --target=node24 --outdir=dist/scripts --out-extension:.js=.mjs --external:pg --external:uuid --external:zod",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

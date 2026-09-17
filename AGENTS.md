@@ -19,6 +19,7 @@ pnpm check                   # lint + formato + tipos + tests unitarios (obligat
 pnpm test:e2e                # Playwright: levanta API en modo e2e y la web
 pnpm test:db                 # migraciones + RLS contra DATABASE_URL (se omite si no está definida)
 pnpm test:redis              # lock distribuido cola:{clase} contra REDIS_URL (se omite si no está definida)
+pnpm build:contrato          # regenera docs/openapi.json (CI falla si no está al día)
 ```
 
 Usuarios de desarrollo (contraseña `Asotracmet2026!`): `superadmin@`, `ops@`, `hseq@`, `finance@`,

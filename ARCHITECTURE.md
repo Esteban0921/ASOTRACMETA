@@ -269,6 +269,16 @@ El enmascarado `R*` (cédula `******1658`, celular) se aplica en `vistas.ts`.
 
 ### 6.4 Rutas
 
+Contrato (TASK-0033): `apps/api/src/openapi/contrato.ts` lista cada ruta con su guard, el esquema
+Zod del cuerpo o la query (los mismos que valida el handler) y la vista de respuesta
+(`packages/shared/src/vistas.ts`, compartida con la web). `documento.ts` lo convierte en OpenAPI
+3.1 (`z.toJSONSchema`, JSON Schema 2020-12): la API lo sirve en `GET /api/v1/openapi.json`
+(público) y `pnpm build:contrato` deja el mismo documento en [docs/openapi.json](docs/openapi.json)
+(CI falla si no está al día). `openapi.test.ts` cruza el contrato con las rutas que Fastify
+registra de verdad (ninguna sin documentar, ninguna documentada que no exista) y valida las
+respuestas reales contra las vistas. Errores: `ErrorApi` en `default`; `x-guard` y `x-reauth`
+documentan RBAC y re-autenticación. La tabla siguiente es el resumen humano del mismo contrato.
+
 | Método y ruta                                | Guard                        | Notas                                                             |
 | -------------------------------------------- | ---------------------------- | ----------------------------------------------------------------- |
 | `GET /healthz`, `GET /readyz`, `GET /metrics` | público (`/metrics` con `METRICS_TOKEN`) | `readyz` = base (latencia) + `PING` a Redis si hay `REDIS_URL`, 503 si algo falla; `metrics` en texto Prometheus sin PII |
@@ -331,6 +341,7 @@ El enmascarado `R*` (cédula `******1658`, celular) se aplica en `vistas.ts`.
 | `GET /me/preferencias` · `PATCH /me/preferencias` | autenticado (propias)   | canales opt-in `{ correo, whatsapp, celular }`; audita `preferencias.cambiar` sin el celular |
 | `POST /jobs/notificar`                       | cola U (superadmin)          | una pasada del worker de avisos (outbox → bandeja + canales)      |
 | `POST /jobs/avisos`                          | cola U (superadmin)          | oferta por expirar (T-15), documento por vencer (30/7), digest de recaudo; idempotentes por clave |
+| `GET /openapi.json`                          | público                      | contrato OpenAPI 3.1 generado del código (TASK-0033)              |
 | `POST /__e2e/reset`                          | solo `modoE2e`               | vuelve al seed                                                    |
 
 Todas las rutas de spec §8 están implementadas.
@@ -431,6 +442,10 @@ con `POST /jobs/notificar`. Web: `/notificaciones` (bandeja + preferencias) y el
 (n)" en la barra para todos los roles.
 
 ## 7. Frontend (`apps/web`)
+
+Tipos de la API: `apps/web/src/api/tipos.ts` solo reexporta los `z.infer` de
+`packages/shared/src/vistas.ts` (TASK-0033); no hay proyecciones mantenidas a mano en la web. Si
+la API deja de devolver un campo documentado, falla `openapi.test.ts` antes de que la web lo note.
 
 - React 19 + TypeScript + Vite 8. Router por rol: `/login`, `/entrar` (enlace del asociado),
   `/ops` (sala de turnos: admin_ops, superadmin, admin_hseq, admin_finance, viewer), `/me`
@@ -535,6 +550,7 @@ sobre Postgres se validan con `pnpm test:db` (CI job `db`).
 | `web`                   | `apps/web/src/**/*.test.tsx?`      | formato/traducción de errores; `OfertaCard` (declinar exige motivo); `api()` reintenta escrituras ante `COLA_LOCKED` (2 s, dos veces) y nada más |
 | `domain`                | `packages/domain/src/notificaciones.test.ts` | outbox: ofrecer → `oferta.abierta`, aceptar → `tr.asignado` (asociado + ops), declinar → `oferta.declinada` con motivo + reoferta, cancelar → `tr.cancelado`; rollback se lleva el aviso; la clave deduplica |
 | `api`                   | `apps/api/src/notificaciones.test.ts`, `mensajeria/proveedores.test.ts` | worker: outbox → bandeja del asociado + correo, bandeja personal, marcar leída idempotente y solo propia; `tr.asignado` a asociado y ops; declinar avisa a ops; preferencias (sin correo no hay mensaje, WhatsApp por celular, validación, auditoría sin PII); canal caído → `fallida`; repositorio caído → reintento y cierre con error; jobs por tiempo idempotentes; SMTP y WhatsApp con transportes falsos |
+| `api`                   | `apps/api/src/openapi.test.ts`     | contrato: cada ruta registrada está documentada y viceversa; `openapi.json` 3.1 sin `$ref` colgantes, cuerpos y respuestas como componentes, parámetros de ruta y query, seguridad; 26 respuestas reales validadas contra las vistas compartidas (`vistas.ts`) |
 | `api` (`test:redis`)    | `apps/api/src/lock-cola.test.ts`   | lock `cola:{clase}`: se toma durante la transacción y se suelta aunque falle, ajeno → `COLA_LOCKED` sin abrir transacción, TTL vence huérfanos, nadie suelta un token ajeno, fail-open con Redis caído; contra Redis real (`REDIS_URL`): `SET NX PX` + compare-and-delete y la API responde 409 `{origen: redis}` mientras otra instancia tiene la clave |
 | `db`                    | `infra/postgres/migraciones.test.ts` | migraciones idempotentes, tablas, audit append-only, RLS member con `set local role`, unicidad diferible, checks de placa. Se omite sin `DATABASE_URL` |
 | `db`                    | `infra/postgres/api-postgres.test.ts` | la API completa sobre Postgres real: sesiones y enlaces persistidos (logout revoca, enlace de un solo uso), enrolamiento TOTP cifrado en la base, cola con elegibilidad, ofrecer→aceptar persistido (posiciones, audit, secuencia TR), declinar con reoferta, cancelar TR, viewer no muta, member no lee ajenos, "Tu posición: 2 de 10" bajo RLS, `COLA_LOCKED` con la clase bloqueada por otra tx, 20 coordinadores en paralelo sobre un cupo → una sola oferta, parámetros auditados; override y reset persistidos con el factor de re-autenticación; usuarios y placas de asociado persistidos (crear, entrar, cambiar rol) |
@@ -542,7 +558,7 @@ sobre Postgres se validan con `pnpm test:db` (CI job `db`).
 | `migracion`             | `infra/migracion/modelo.test.ts` | normalizadores (placa, serial de Excel, marcas, clase), plan sobre un libro sintético con la forma del Excel real (precedencia de asociado, alias, habilitaciones, tarifas, cola densa, TR sintético, recaudo y excepciones) y criterios §13.3 sobre el xlsx real si está presente |
 | e2e                     | `e2e/*.spec.ts`                    | login ops (contraseña + TOTP) → ofrecer → login member (enlace) → aceptar → aparece TR; declinar con motivo → pasa a la siguiente placa; viewer sin botones y 403 en API; credenciales inválidas; código TOTP incorrecto y correcto; administrador sin segundo factor lo configura en el primer acceso; el enlace del asociado es de un solo uso; superadmin resetea la cola con motivo, confirmación y segundo factor y el veedor ve la intervención; superadmin da de alta un asociado con placa que entra con su enlace |
 
-Comandos: `pnpm test` (unit/integración), `pnpm test:coverage`, `pnpm test:e2e`, `pnpm test:db`, `pnpm test:redis`.
+Comandos: `pnpm test` (unit/integración), `pnpm test:coverage`, `pnpm test:e2e`, `pnpm test:db`, `pnpm test:redis`; `pnpm build:contrato` regenera `docs/openapi.json`.
 `pnpm check` = lint + formato + tipos + unit. CI (`.github/workflows/ci.yml`): job `check`, job `e2e`
 (Chromium; el test de PWA usa un tercer servidor `vite preview` con el build real) y job `db` (servicios Postgres 16 y Redis 7 → `db:migrate` + `db:seed` + `test:db` + `test:redis`).
 

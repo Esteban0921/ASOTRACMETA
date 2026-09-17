@@ -25,6 +25,8 @@ jobs:
       - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm build
+      - name: El contrato OpenAPI está al día (pnpm build:contrato)
+        run: git diff --exit-code -- docs/openapi.json
       - run: pnpm test:coverage
       - uses: actions/upload-artifact@v4
         if: always()

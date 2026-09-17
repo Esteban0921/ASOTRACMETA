@@ -11,3 +11,4 @@ export * from './schemas-viajes.js';
 export * from './recaudo.js';
 export * from './documentos.js';
 export * from './notificaciones.js';
+export * from './vistas.js';

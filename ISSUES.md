@@ -48,7 +48,7 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 | TASK-0030 | Observabilidad: OpenTelemetry, métricas, readyz, runbooks     | 1-2  | media     | hecha         |
 | TASK-0031 | PWA: service worker, instalable, lectura offline              | 1    | media     | hecha         |
 | TASK-0032 | Build de producción de la API, Dockerfile y despliegue        | 1    | alta      | hecha         |
-| TASK-0033 | Contrato OpenAPI desde Zod y tipos compartidos con la web     | 1    | baja      | pendiente   |
+| TASK-0033 | Contrato OpenAPI desde Zod y tipos compartidos con la web     | 1    | baja      | hecha         |
 | TASK-0034 | Export CSV por rol con watermark                              | 2    | baja      | hecha         |
 | TASK-0035 | Staging anonimizado y simulacro de restore                    | 2    | media     | hecha         |
 | TASK-0036 | Habeas data: extracto de TR por asociado                      | 2    | baja      | hecha         |
@@ -526,14 +526,16 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 
 ### TASK-0033 — Contrato OpenAPI y tipos compartidos
 
-- **Estado:** pendiente
+- **Estado:** hecha (2026-09-17)
 - **Fase:** 1
 - **Prioridad:** baja
 - **Contexto:** Generar OpenAPI desde los esquemas Zod y derivar los tipos de `apps/web/src/api/tipos.ts` en lugar de mantenerlos a mano.
 - **Criterio de done:**
-  - [ ] `GET /api/v1/openapi.json` y tipos generados en build
-- **Referencias:** ARCHITECTURE §6.4, §7
-- **Evidencia:** —
+  - [x] `GET /api/v1/openapi.json` (público, OpenAPI 3.1 generado del código) y `docs/openapi.json` regenerado en `pnpm build` (`build:contrato`; CI falla si no está al día)
+  - [x] Tipos compartidos: las vistas de respuesta viven en Zod (`packages/shared/src/vistas.ts`); `apps/web/src/api/tipos.ts` solo reexporta sus `z.infer` (nada mantenido a mano)
+  - [x] El contrato se prueba: cada ruta registrada en Fastify está documentada y viceversa, y 26 respuestas reales cumplen las vistas
+- **Referencias:** ARCHITECTURE §6.4, §7, §10
+- **Evidencia:** `apps/api/src/openapi/contrato.ts` (98 entradas: guard, cuerpo/query Zod del handler, vista de respuesta), `documento.ts` (`z.toJSONSchema` 2020-12 → OpenAPI 3.1 con componentes, parámetros de ruta y query, `bearerAuth`, `x-guard`, `x-reauth`, `ErrorApi` en `default`), `GET /api/v1/openapi.json` en `app.ts`, `scripts/openapi.ts` (`pnpm build:contrato` → `docs/openapi.json`, 77 rutas y 81 esquemas). `apps/api/src/openapi.test.ts` (29 tests): rutas registradas ⇔ contrato (`rutasRegistradas` vía `onRoute`), documento sin `$ref` colgantes e idéntico al generado, y `it.each` con 26 respuestas reales validadas contra `vistas.ts` (sesión, cola, ofertas, TR, ficha, documentos, alertas, viajes, tablero, usuarios, notificaciones...). Web: `tipos.ts` pasa de 429 líneas a mano a reexports. Decisión: no se usa `openapi-typescript` porque los tipos ya se derivan de Zod (`z.infer`) sin paso de codegen; `docs/openapi.json` queda para clientes externos. `pnpm check` → 226 passed (2026-09-17); `pnpm test:db` → 28 passed; `pnpm test:e2e` → 16 passed; `pnpm build` en verde (genera el contrato).
 
 ### TASK-0034 — Export CSV por rol con watermark
 

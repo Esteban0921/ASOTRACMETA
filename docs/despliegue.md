@@ -9,7 +9,7 @@ Fly/Render usan la misma imagen (sección 7).
 
 | Comando                | Produce                                                                                                      |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `pnpm build`           | `apps/api/dist/index.mjs` (esbuild, ESM, dominio y shared empaquetados; fastify/pg/zod externos), `apps/web/dist/` (Vite), `dist/scripts/{migrate-db,seed-db}.mjs` |
+| `pnpm build`           | `apps/api/dist/index.mjs` (esbuild, ESM, dominio y shared empaquetados; fastify/pg/zod externos), `apps/web/dist/` (Vite), `dist/scripts/{migrate-db,seed-db}.mjs`, `docs/openapi.json` (contrato) |
 | `docker build -t asotracmet .` | Imagen multi-stage: `pnpm install --frozen-lockfile` + `pnpm build` + `pnpm deploy --prod` de la API; runtime `node:24-alpine` sin `tsx` ni fuentes |
 
 Sin Docker: `pnpm build && WEB_DIR=apps/web/dist PERSISTENCIA=postgres DATABASE_URL=… node apps/api/dist/index.mjs`.

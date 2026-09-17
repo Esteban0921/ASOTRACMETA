@@ -25,6 +25,9 @@ import { correrAvisos, type ResumenAvisos } from './notificaciones/avisos.js';
 import { WorkerNotificaciones } from './notificaciones/worker.js';
 import { rutasNotificaciones } from './rutas/notificaciones.js';
 import { RegistroMetricas, pingRedis } from './observabilidad.js';
+import { CONTRATO } from './openapi/contrato.js';
+import { construirOpenApi } from './openapi/documento.js';
+import { VERSION_CONTRATO } from './openapi/version.js';
 import { iniciarTelemetria, trazarUnidadDeTrabajo, type Telemetria } from './telemetria.js';
 import { registrarManejoErrores } from './errores.js';
 import {
@@ -59,6 +62,11 @@ export interface OpcionesApp {
   lock?: AlmacenLock;
 }
 
+export interface RutaRegistrada {
+  metodo: string;
+  ruta: string;
+}
+
 export interface AppConstruida {
   app: FastifyInstance;
   almacenamiento: Almacenamiento;
@@ -74,6 +82,7 @@ export interface AppConstruida {
   /** Worker de avisos: `index.ts` lo arranca; los tests lo disparan con `procesar()`. */
   worker: WorkerNotificaciones;
   correrAvisos: () => Promise<ResumenAvisos>;
+  rutasRegistradas: readonly RutaRegistrada[];
 }
 
 const IDS_UUID_V7: GeneradorIds = { nuevo: () => uuidv7() };
@@ -103,6 +112,13 @@ export async function construirApp(opciones: OpcionesApp = {}): Promise<AppConst
 
   const app = Fastify({
     logger: config.logger ? { level: process.env.LOG_LEVEL ?? 'info' } : false,
+  });
+  // Rutas que Fastify registra de verdad: `openapi.test.ts` las cruza con el contrato (TASK-0033).
+  const rutasRegistradas: RutaRegistrada[] = [];
+  app.addHook('onRoute', (ruta) => {
+    for (const metodo of Array.isArray(ruta.method) ? ruta.method : [ruta.method]) {
+      rutasRegistradas.push({ metodo, ruta: ruta.url });
+    }
   });
 
   // Lock distribuido `cola:{clase}` (§7.7, TASK-0020): con REDIS_URL cada transacción de cola toma
@@ -244,6 +260,10 @@ export async function construirApp(opciones: OpcionesApp = {}): Promise<AppConst
     return reply.status(ok ? 200 : 503).send({ ok, almacen: almacenamiento.clase, db, redis });
   });
 
+  // Contrato OpenAPI 3.1 (TASK-0033): el mismo documento que `pnpm build:contrato` deja en docs/.
+  const openapi = construirOpenApi(CONTRATO, { version: VERSION_CONTRATO });
+  app.get('/api/v1/openapi.json', async (_req, reply) => reply.send(openapi));
+
   // Métricas Prometheus (§15), sin PII. Con METRICS_TOKEN exige el bearer.
   app.get('/metrics', async (req, reply) => {
     if (config.metricsToken && req.headers.authorization !== `Bearer ${config.metricsToken}`) {
@@ -368,6 +388,7 @@ export async function construirApp(opciones: OpcionesApp = {}): Promise<AppConst
     telemetria,
     worker,
     correrAvisos: correrAvisosHoy,
+    rutasRegistradas,
   };
 }
 
