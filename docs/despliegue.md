@@ -28,7 +28,12 @@ Las de `.env.example`, más las que solo aplican en producción:
 | `CORS_ORIGINS`      | no          | por defecto `WEB_URL` (misma origen: la web la sirve la API)                               |
 | `WEB_DIR`           | fija        | `/app/web` en la imagen                                                                     |
 | `MIGRACIONES_DIR`   | fija        | `/app/migrations` en la imagen                                                              |
-| `MENSAJERIA`        | no          | `consola` hasta TASK-0026 (los códigos salen por el log del contenedor)                    |
+| `MENSAJERIA`        | no          | `consola` por defecto: lo que no tenga proveedor sale por el log del contenedor            |
+| `SMTP_URL`          | correo      | `smtp://usuario:clave@host:587` o `smtps://…:465` (nodemailer): códigos, enlaces y avisos por correo |
+| `SMTP_FROM`         | no          | remitente (`ASOTRACMET <turnos@asotracmet.co>`)                                           |
+| `WHATSAPP_TOKEN`    | WhatsApp    | token de la WhatsApp Cloud API (Meta); con `WHATSAPP_PHONE_ID` activa el canal celular (opt-in por usuario). Fuera de la ventana de 24 h de una conversación Meta exige plantillas aprobadas: hasta tenerlas, el aviso puede no entregarse y queda `fallida` en la bandeja |
+| `WHATSAPP_PHONE_ID` | WhatsApp    | id del número emisor en Meta                                                               |
+| `NOTIFICACIONES_INTERVALO_MS` | no | cada cuánto el worker consume la outbox de avisos (5000)                                |
 | `APP_PORT`          | no          | `127.0.0.1:3001`: solo el proxy local llega a la app                                        |
 | `BACKUP_PASSPHRASE` | backups     | frase de cifrado de los backups; nunca en el servidor en claro (variable del cron)          |
 
@@ -99,7 +104,8 @@ solo si se hizo `up` sin `--force-recreate`; por eso el backup va antes de cada 
   `MENSAJERIA=consola`).
 - Salud: `/healthz` (proceso) y `/readyz` (consulta a Postgres). El `HEALTHCHECK` de la imagen usa
   `/healthz`.
-- Jobs: el proceso expira ofertas cada minuto (spec §14); no hay que programar nada aparte.
+- Jobs: el proceso expira ofertas y encola avisos por tiempo cada minuto, entrega notificaciones
+  cada 5 s y recalcula documentos cada noche (spec §14); no hay que programar nada aparte.
 - Runbooks mínimos en ARCHITECTURE §14.
 
 ## 7. Fly.io / Render

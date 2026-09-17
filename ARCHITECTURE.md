@@ -246,7 +246,7 @@ de un solo uso por correo; **`member`** entra con un enlace mágico de un solo u
 | Sesión                        | Token opaco `sess_…` (256 bits); solo se guarda su hash en `sesiones`. Expira por rol (`DURACION_SESION_HORAS`: superadmin 4 h, admin 8 h, viewer 12 h, member 7 d). `POST /auth/logout` la revoca de verdad. |
 | Re-autenticación              | `POST /auth/reauth` con contraseña o código abre una ventana de 5 min (`sesiones.reauth_hasta`); el guard `exigirReauth` la exige en acciones sensibles (reset de cola, TASK-0024). |
 | Anti-enumeración              | Pedir código o enlace responde igual exista o no el correo; contraseña incorrecta y cuenta inexistente devuelven el mismo 401.                          |
-| Canal                         | Puerto `Mensajeria` (`mensajeria.ts`): `consola` en desarrollo (el código o el enlace salen por el log de la API), `memoria` en tests y e2e. SMTP y WhatsApp: TASK-0026. |
+| Canal                         | Puerto `Mensajeria` (`mensajeria.ts`): `memoria` en tests y e2e; en producción `mensajeria/proveedores.ts` enruta por canal: correo por SMTP (`SMTP_URL`, nodemailer) y celular por WhatsApp Cloud API (`WHATSAPP_TOKEN` + `WHATSAPP_PHONE_ID`); lo que no esté configurado sale por el log (`consola`). TASK-0026. |
 
 El hook `onRequest` resuelve el Bearer a sesión + usuario, rellena `request.usuario`, `request.actor`
 y `request.sesion`, y fija el contexto RLS. Rutas públicas: `/healthz`, `/readyz` y las de acceso.
@@ -326,6 +326,11 @@ El enmascarado `R*` (cédula `******1658`, celular) se aplica en `vistas.ts`.
 | `GET /me/extracto`                           | trs R (own), solo member     | habeas data: placas, TR, viajes, recaudos y textos de propósito/acceso/cancelación; audita `habeas.extracto` |
 | `GET /documentos/alertas?dias=`              | documentos R (own, `R*`)     | vencidos y por vencer (ventana = `dias` o `dias_alerta` del tipo), del más urgente al menos; member solo sus placas |
 | `POST /jobs/recalcular-documentos`           | documentos U (hseq, superadmin) | disparo manual del job nocturno `documentos_recalcular_estado`; auditado |
+| `GET /me/notificaciones?noLeidas=&limite=`   | autenticado (propias)        | bandeja in-app del usuario, más reciente primero (spec §11)       |
+| `POST /me/notificaciones/:id/leer`           | autenticado (propias)        | marca leída; idempotente; 404 si no es suya                       |
+| `GET /me/preferencias` · `PATCH /me/preferencias` | autenticado (propias)   | canales opt-in `{ correo, whatsapp, celular }`; audita `preferencias.cambiar` sin el celular |
+| `POST /jobs/notificar`                       | cola U (superadmin)          | una pasada del worker de avisos (outbox → bandeja + canales)      |
+| `POST /jobs/avisos`                          | cola U (superadmin)          | oferta por expirar (T-15), documento por vencer (30/7), digest de recaudo; idempotentes por clave |
 | `POST /__e2e/reset`                          | solo `modoE2e`               | vuelve al seed                                                    |
 
 Todas las rutas de spec §8 están implementadas.
@@ -405,6 +410,26 @@ anular sin pagos deja el recaudo `castigado`. `RepositorioViajes` tiene adaptado
 cliente, destino, transportadora y conductor; RLS de `viajes` y `recaudos` por placa del member).
 `GET /viajes/resumen?mes=` agrega por cliente y placa: es el "3 % del mes" de la fase 2.
 
+### 6.11 Notificaciones (`rutas/notificaciones.ts`, `notificaciones/`, `mensajeria/`)
+
+Spec §11 con outbox transaccional (ADR-0006). El motor deja el aviso con `tx.notificar(...)` en la
+misma transacción que la mutación: `oferta.abierta` (al asociado de la placa), `oferta.declinada`
+(a ops), `tr.asignado` (asociado + ops) y `tr.cancelado` (asociado). Los avisos por tiempo los
+encolan los jobs de `notificaciones/avisos.ts` con una `clave` de idempotencia:
+`oferta.por_expirar` (T-15 min, asociado + ops), `documento.por_vencer` (al entrar en 30 y en 7
+días, HSEQ + asociado) y `recaudo.pendiente` (digest diario a finance). `WorkerNotificaciones`
+consume la outbox (`tomarPendientes` con `for update skip locked` en Postgres), resuelve
+destinatarios (`destinatarios()`: rol interno, usuario, o `member` por asociado/placa), redacta con
+`plantillas.ts` (texto plano, sin PII más allá de la placa) y deja una fila por persona en la
+bandeja (`notificaciones`, única por aviso y usuario: reintentar no duplica). La bandeja in-app
+siempre; correo y WhatsApp solo si el usuario los tiene en `usuarios.preferencias_notificacion`. Un
+canal caído no bloquea la bandeja (`canales.correo = 'fallida'` en la fila); un fallo al guardar
+deja el aviso pendiente, vuelve a salir al minuto y a los cinco intentos se cierra con error. RLS
+de la bandeja por `app.usuario_id` (nuevo `set_config` por petición, `app_usuario_id()`). El
+worker corre en `index.ts` cada `NOTIFICACIONES_INTERVALO_MS` (5 s); en tests y e2e se dispara
+con `POST /jobs/notificar`. Web: `/notificaciones` (bandeja + preferencias) y el enlace "Avisos
+(n)" en la barra para todos los roles.
+
 ## 7. Frontend (`apps/web`)
 
 - React 19 + TypeScript + Vite 8. Router por rol: `/login`, `/entrar` (enlace del asociado),
@@ -474,6 +499,7 @@ Migraciones SQL append-only (RULE-025), aplicadas por `migrar.ts` (`pnpm db:migr
 | `0012_sesiones`       | `sesiones` (hash del token, expiración por rol, `revocada_en`, `reauth_hasta`); índices de `otp_codes`; sustituye y elimina `refresh_tokens`                  |
 | `0013_reauth_factor`  | `sesiones.reauth_factor` (`password` \| `totp`): el reset de cola exige el segundo factor cuando `reset_cola_requiere_2fa`                                    |
 | `0015_totp_anti_replay` | `usuarios.totp_ultimo_paso` (anti-replay TOTP, TASK-0040)                                                                                       |
+| `0016_notificaciones` | `usuarios.preferencias_notificacion`, `app_usuario_id()`, `notificaciones_outbox` (outbox transaccional) y `notificaciones` (bandeja, RLS por usuario) (TASK-0026) |
 | `0014_metricas_mes`   | `metricas_mes` (snapshot mensual de equidad por placa, RLS lectura para todo rol menos member) |
 
 La API abre cada transacción con `set local app.rol` y `set local app.vehiculo_ids`; sin ellos el
@@ -497,8 +523,7 @@ sobre Postgres se validan con `pnpm test:db` (CI job `db`).
 - Secretos: prohibido persistir credenciales de terceros (no existe columna); `AUTH_SECRET` y
   claves de cifrado del entorno; `.env` ignorado por git.
 - Rate limit en login; CORS estricto por `CORS_ORIGINS`.
-- Pendiente: SMTP y WhatsApp como canal real de códigos y enlaces (TASK-0026); subida real de
-  soportes HSEQ a object storage con URL prefirmada (TASK-0043).
+- Pendiente: subida real de soportes HSEQ a object storage con URL prefirmada (TASK-0043).
 
 ## 10. Estrategia de pruebas
 
@@ -508,6 +533,8 @@ sobre Postgres se validan con `pnpm test:db` (CI job `db`).
 | `domain`                | `packages/domain/src/*.test.ts`    | spec §16: cabeza no habilitada → toma la 2; dos TM del mismo asociado; ofrecer+declinar+reofertar en una tx; 20 paralelos → 1 + 19 `COLA_LOCKED`; políticas de declinación; expiración; cancelar TR; secuencia TR; rollback; invariantes |
 | `api`                   | `apps/api/src/**/*.test.ts`        | TOTP contra los vectores del RFC 6238; cifrado AES-GCM; tokens de reto; contraseña + TOTP, enrolamiento en el primer acceso, reto caducado, código por correo de un solo uso, bloqueo tras cinco intentos, anti-enumeración, enlace mágico de un solo uso y caducado, logout que revoca, re-autenticación; expiración de sesión por rol; viewer no muta (403); member no lista TR ajenos; PII enmascarada; flujo ofrecer→aceptar/declinar; idempotencia; parámetros auditados; job; concurrencia HTTP con transacciones lentas; override y reset (RBAC, re-autenticación, segundo factor obligatorio por parámetro, intervenciones visibles para viewer); IAM (listado sin secretos, creación por rol, el nuevo usuario entra, cambio de rol revoca sesiones, desactivación, placas del asociado auditadas) |
 | `web`                   | `apps/web/src/**/*.test.tsx?`      | formato/traducción de errores; `OfertaCard` (declinar exige motivo); `api()` reintenta escrituras ante `COLA_LOCKED` (2 s, dos veces) y nada más |
+| `domain`                | `packages/domain/src/notificaciones.test.ts` | outbox: ofrecer → `oferta.abierta`, aceptar → `tr.asignado` (asociado + ops), declinar → `oferta.declinada` con motivo + reoferta, cancelar → `tr.cancelado`; rollback se lleva el aviso; la clave deduplica |
+| `api`                   | `apps/api/src/notificaciones.test.ts`, `mensajeria/proveedores.test.ts` | worker: outbox → bandeja del asociado + correo, bandeja personal, marcar leída idempotente y solo propia; `tr.asignado` a asociado y ops; declinar avisa a ops; preferencias (sin correo no hay mensaje, WhatsApp por celular, validación, auditoría sin PII); canal caído → `fallida`; repositorio caído → reintento y cierre con error; jobs por tiempo idempotentes; SMTP y WhatsApp con transportes falsos |
 | `api` (`test:redis`)    | `apps/api/src/lock-cola.test.ts`   | lock `cola:{clase}`: se toma durante la transacción y se suelta aunque falle, ajeno → `COLA_LOCKED` sin abrir transacción, TTL vence huérfanos, nadie suelta un token ajeno, fail-open con Redis caído; contra Redis real (`REDIS_URL`): `SET NX PX` + compare-and-delete y la API responde 409 `{origen: redis}` mientras otra instancia tiene la clave |
 | `db`                    | `infra/postgres/migraciones.test.ts` | migraciones idempotentes, tablas, audit append-only, RLS member con `set local role`, unicidad diferible, checks de placa. Se omite sin `DATABASE_URL` |
 | `db`                    | `infra/postgres/api-postgres.test.ts` | la API completa sobre Postgres real: sesiones y enlaces persistidos (logout revoca, enlace de un solo uso), enrolamiento TOTP cifrado en la base, cola con elegibilidad, ofrecer→aceptar persistido (posiciones, audit, secuencia TR), declinar con reoferta, cancelar TR, viewer no muta, member no lee ajenos, "Tu posición: 2 de 10" bajo RLS, `COLA_LOCKED` con la clase bloqueada por otra tx, 20 coordinadores en paralelo sobre un cupo → una sola oferta, parámetros auditados; override y reset persistidos con el factor de re-autenticación; usuarios y placas de asociado persistidos (crear, entrar, cambiar rol) |
@@ -526,7 +553,7 @@ error un servidor que no esté en modo e2e.
 
 Variables (`.env.example`): `PORT`, `HOST`, `AUTH_SECRET`, `CIFRADO_CLAVE` (32 bytes base64; en
 desarrollo se deriva de `AUTH_SECRET`), `CORS_ORIGINS`, `WEB_URL` (base de los enlaces de acceso),
-`MENSAJERIA` (`consola` | `memoria`), `OTP_TTL_MINUTOS`, `MAGIC_LINK_TTL_MINUTOS`, `REAUTH_MINUTOS`,
+`MENSAJERIA` (`consola` | `memoria`), `SMTP_URL`, `SMTP_FROM`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `NOTIFICACIONES_INTERVALO_MS` (TASK-0026), `OTP_TTL_MINUTOS`, `MAGIC_LINK_TTL_MINUTOS`, `REAUTH_MINUTOS`,
 `PERSISTENCIA` (`memoria` | `postgres`), `DATABASE_URL`, `REDIS_URL`, `LOG_LEVEL`,
 `LOGIN_RATE_LIMIT_MAX`, `ASOTRACMET_E2E`. La semilla cifra los secretos TOTP con la misma clave que
 la API: `pnpm db:seed` y la API deben correr con el mismo `AUTH_SECRET`/`CIFRADO_CLAVE`. Modos de la API: memoria (por defecto), postgres (`PERSISTENCIA=postgres` +
@@ -541,9 +568,11 @@ expirar ofertas cada minuto (`POST /jobs/expirar-ofertas` lo dispara a mano) y r
 `documentos.estado` un minuto después de arrancar y luego cada 24 h con el rol de servicio
 (`POST /jobs/recalcular-documentos` lo dispara HSEQ o superadmin y queda auditado). El semáforo
 que ven las pantallas se calcula al leer (`estadoDocumento`), así que el job solo mantiene la
-columna para consultas SQL y RLS. Objetivo (spec §14): alertas por correo/WhatsApp y digest diario a
-ops (TASK-0026), snapshot mensual de equidad (TASK-0029), archivado de `audit_log` a 24 meses
-(TASK-0030).
+columna para consultas SQL y RLS. Notificaciones (TASK-0026, ADR-0006): el worker de avisos
+consume la outbox cada `NOTIFICACIONES_INTERVALO_MS` (5 s) y, con el job del minuto, corren los
+avisos por tiempo (oferta por expirar, documento por vencer, digest de recaudo; `POST /jobs/avisos`
+y `POST /jobs/notificar` los disparan a mano). Snapshot mensual de equidad el día 1 (TASK-0029).
+Pendiente (spec §14): digest diario a ops y archivado de `audit_log` a 24 meses.
 
 ## 13. Estado actual vs objetivo
 
@@ -551,12 +580,12 @@ ops (TASK-0026), snapshot mensual de equidad (TASK-0029), archivado de `audit_lo
 | ------------------------ | ----------------------------------------------- | ---------------------------------------------- | ------------------- |
 | Motor de cola            | completo (§7) con tests, override y reset auditados | anti-replay TOTP en re-autenticación       | TASK-0040           |
 | Persistencia             | memoria (dev/e2e) o Postgres con RLS y locks     | + Redis para lock multi-instancia              | TASK-0020           |
-| Auth                     | contraseña + TOTP, código por correo, enlace mágico, sesiones revocables, re-auth | + SMTP/WhatsApp reales, anti-replay TOTP | TASK-0026, 0040     |
+| Auth                     | contraseña + TOTP, código por correo, enlace mágico, sesiones revocables, re-auth | —                                        | TASK-0026, 0040 (hechas) |
 | IAM y maestros           | usuarios, roles, scope member y CRUD de maestros por rol (API + `/hseq`, `/admin/usuarios`) | catálogo de destinos canónicos tras la migración | TASK-0023 (hecha)   |
 | Pantallas                | login, ops, member, hseq, finance, tablero, admin (cola, usuarios, parámetros, auditoría); PWA instalable con lectura offline de Mi turno | notificaciones in-app (TASK-0026) | —                   |
 | Viajes / recaudo         | viaje desde TR, flete vs tarifa, liquidación con snapshot del parámetro, pagos y resumen mensual (API + `/finance`, memoria y Postgres con RLS) | export CSV, tablero viewer | TASK-0027 (hecha), 0029, 0034 |
 | HSEQ                     | documentos con semáforo 30/7/vencido (calculado al leer), alertas en `/hseq` y `/me`, habilitación por cliente con motivo, job nocturno de recálculo; verificado con datos reales (8 placas rechazadas por documento vencido) | subida de soportes a object storage | TASK-0028 (hecha), 0043 |
-| Notificaciones           | —                                                | in-app, email, WhatsApp opt-in, outbox         | TASK-0026           |
+| Notificaciones           | outbox transaccional + worker, bandeja in-app con RLS por usuario, correo (SMTP) y WhatsApp (Cloud API) opt-in por preferencia, jobs por tiempo idempotentes | plantillas aprobadas de WhatsApp fuera de la ventana de 24 h; digest a ops | TASK-0026 (hecha)   |
 | Migración Excel          | `pnpm db:migrate-xlsx`: plan puro, carga repetible, informe (docs/migracion-excel.md) | atar TR reales cuando haya planilla con placa; catálogo de destinos canónicos | TASK-0025 |
 | Observabilidad           | `/readyz` con base y Redis, `/metrics` Prometheus (COLA_LOCKED, latencia de ofrecer, declinaciones, ofertas abiertas), OTel (span `cola.transaccion` + métricas OTLP) opcional, runbooks en `docs/runbooks/` | alertas configuradas en el colector | TASK-0030 (hecha)   |
 | Despliegue               | `pnpm build` (esbuild + Vite), `Dockerfile` multi-stage, `infra/compose.prod.yaml`, backups cifrados y restore (`docs/despliegue.md`) | Fly/Render con la misma imagen; readyz con Redis | TASK-0032 (hecha), 0030 |
@@ -585,3 +614,4 @@ secuencia TR desfasada, member ve placa ajena, restore en staging, observabilida
 - [ADR-0003](docs/adr/0003-autenticacion-de-desarrollo.md) — Autenticación de desarrollo (password + HMAC) antes de OTP/2FA.
 - [ADR-0004](docs/adr/0004-rls-por-settings-de-sesion.md) — RLS con `app.rol` / `app.vehiculo_ids` por transacción.
 - [ADR-0005](docs/adr/0005-escrituras-con-rol-de-servicio.md) — Escrituras del motor con rol de servicio, lecturas con el rol del actor.
+- [ADR-0006](docs/adr/0006-outbox-de-notificaciones-en-postgres.md) — Outbox de notificaciones en Postgres, sin BullMQ.

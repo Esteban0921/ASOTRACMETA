@@ -8,6 +8,8 @@ import type { Rol } from '@asotracmet/shared';
 export interface ContextoRls {
   rol: Rol | 'sistema';
   vehiculoIds: readonly string[];
+  /** Usuario de la petición: RLS de filas personales (bandeja de avisos). Sin petición, ninguno. */
+  usuarioId?: string | null;
 }
 
 /** Sin petición en curso (migraciones, jobs, arranque) el rol efectivo es `sistema`. */

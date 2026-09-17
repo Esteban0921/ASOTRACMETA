@@ -2,15 +2,21 @@ import { fechaLocal } from '@asotracmet/shared';
 import { construirApp } from './app.js';
 import { mesAnterior, tableroDe } from './rutas/tablero.js';
 
-const { app, motor, config, actorSistema, almacenamiento, reloj } = await construirApp();
+const { app, motor, config, actorSistema, almacenamiento, reloj, worker, correrAvisos } =
+  await construirApp();
 
 // Job §14: expirar ofertas cada minuto, con el usuario de servicio como autor.
 const job = setInterval(() => {
   motor
     .expirarOfertas(actorSistema)
     .catch((error: unknown) => app.log.error(error, 'job expirar-ofertas'));
+  // Avisos por tiempo (§11, §14): oferta por expirar, documento por vencer, digest de recaudo.
+  // Idempotentes por clave: correr cada minuto no repite nada.
+  correrAvisos().catch((error: unknown) => app.log.error(error, 'job avisos'));
 }, 60_000);
 job.unref();
+// Worker de notificaciones (ADR-0006): consume la outbox y entrega por cada canal.
+worker.iniciar(config.notificacionesIntervaloMs);
 
 // Job §14: recalcular `documentos.estado` cada noche (y al arrancar), con el rol de servicio.
 const DIA_MS = 24 * 60 * 60 * 1000;
@@ -48,6 +54,7 @@ for (const senal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(senal, () => {
     clearInterval(job);
     clearTimeout(nocturno);
+    worker.detener();
     void app.close().then(() => process.exit(0));
   });
 }

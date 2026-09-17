@@ -8,6 +8,8 @@ import type {
   EstadoViaje,
   EstadoVehiculo,
   Rol,
+  EventoNotificacion,
+  PreferenciasNotificacion,
 } from '@asotracmet/shared';
 
 // Proyecciones que devuelve la API (apps/api/src/vistas.ts). Se mantienen a mano hasta TASK-0024 (OpenAPI).
@@ -411,3 +413,17 @@ export interface Tablero {
   declinacionesPorMotivo: Array<{ motivo: string; total: number }>;
   equidad: MetricaPlaca[];
 }
+
+/** Bandeja de avisos (spec §11, TASK-0026). */
+export interface Notificacion {
+  id: string;
+  evento: EventoNotificacion;
+  asunto: string;
+  texto: string;
+  datos: Record<string, unknown>;
+  canales: Partial<Record<'correo' | 'whatsapp', 'enviada' | 'fallida' | 'omitida'>>;
+  creadaEn: string;
+  leidaEn: string | null;
+}
+
+export type { PreferenciasNotificacion };

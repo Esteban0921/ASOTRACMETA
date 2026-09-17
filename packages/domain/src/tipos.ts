@@ -7,6 +7,7 @@ import type {
   EstadoTr,
   EstadoVehiculo,
   Rol,
+  EventoNotificacion,
 } from '@asotracmet/shared';
 
 // Tipos del dominio (spec §4 y §6). Timestamps en ISO-8601 UTC; fechas de negocio en YYYY-MM-DD.
@@ -150,6 +151,36 @@ export interface EventoAuditoria {
 }
 
 export type NuevoEventoAuditoria = Omit<EventoAuditoria, 'id' | 'at'>;
+
+/**
+ * A quién va un aviso (spec §11): los `member` de un asociado o de una placa, todos los usuarios
+ * de un rol interno, o un usuario concreto. El worker de la API lo traduce a personas y canales.
+ */
+export interface DestinoNotificacion {
+  asociadoId?: string;
+  vehiculoId?: string;
+  rol?: Rol;
+  usuarioId?: string;
+}
+
+/** Aviso que el motor deja en la outbox dentro de su transacción (spec §11, ADR-0006). */
+export interface NuevaNotificacion {
+  evento: EventoNotificacion;
+  destinos: DestinoNotificacion[];
+  datos: Record<string, unknown>;
+  /** Idempotencia: dos avisos con la misma clave se encolan una sola vez. */
+  clave?: string | null;
+}
+
+export interface NotificacionOutbox extends NuevaNotificacion {
+  id: string;
+  clave: string | null;
+  creadaEn: string;
+  tomadaEn: string | null;
+  intentos: number;
+  procesadaEn: string | null;
+  error: string | null;
+}
 
 export interface Elegibilidad {
   elegible: boolean;

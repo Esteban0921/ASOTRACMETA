@@ -7,6 +7,7 @@ import {
   type Documento,
   type Habilitacion,
   type MotivoDeclinacion,
+  type NuevaNotificacion,
   type NuevoEventoAuditoria,
   type Oferta,
   type Requerimiento,
@@ -192,8 +193,9 @@ export async function enEscrituraPg<T>(
     await cliente.query('begin');
     await cliente.query('set local role asotracmet_app');
     await cliente.query(
-      "select set_config('app.rol', $1, true), set_config('app.vehiculo_ids', $2, true)",
-      [contexto.rol, contexto.vehiculoIds.join(',')],
+      `select set_config('app.rol', $1, true), set_config('app.vehiculo_ids', $2, true),
+              set_config('app.usuario_id', $3, true)`,
+      [contexto.rol, contexto.vehiculoIds.join(','), contexto.usuarioId ?? ''],
     );
     const resultado = await fn(cliente);
     await cliente.query('commit');
@@ -220,8 +222,9 @@ export async function enLecturaPg<T>(
     await cliente.query('begin read only');
     await cliente.query('set local role asotracmet_app');
     await cliente.query(
-      "select set_config('app.rol', $1, true), set_config('app.vehiculo_ids', $2, true)",
-      [contexto.rol, contexto.vehiculoIds.join(',')],
+      `select set_config('app.rol', $1, true), set_config('app.vehiculo_ids', $2, true),
+              set_config('app.usuario_id', $3, true)`,
+      [contexto.rol, contexto.vehiculoIds.join(','), contexto.usuarioId ?? ''],
     );
     const resultado = await fn(cliente);
     await cliente.query('commit');
@@ -633,6 +636,21 @@ class TransaccionPostgres implements Transaccion {
         evento.entidadId,
         evento.before === undefined ? null : JSON.stringify(evento.before),
         evento.after === undefined ? null : JSON.stringify(evento.after),
+      ],
+    );
+  }
+
+  /** Outbox (spec §11, ADR-0006): misma transacción que la mutación; `clave` deduplica. */
+  async notificar(aviso: NuevaNotificacion): Promise<void> {
+    await this.conexion.query(
+      `insert into notificaciones_outbox (evento, destinos, datos, clave)
+       values ($1, $2::jsonb, $3::jsonb, $4)
+       on conflict (clave) do nothing`,
+      [
+        aviso.evento,
+        JSON.stringify(aviso.destinos),
+        JSON.stringify(aviso.datos),
+        aviso.clave ?? null,
       ],
     );
   }

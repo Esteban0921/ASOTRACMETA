@@ -25,6 +25,14 @@ export interface Config {
   lockTtlMs: number;
   /** Prefijo de las claves del lock (`cola:`); los tests usan uno propio para no chocar. */
   lockPrefijo: string;
+  /** Correo real (TASK-0026): `smtp://usuario:clave@host:587`; sin él, el correo sale por el log. */
+  smtpUrl: string | null;
+  smtpFrom: string;
+  /** WhatsApp Cloud API (opt-in por usuario); sin token, el canal sale por el log. */
+  whatsappToken: string | null;
+  whatsappPhoneId: string | null;
+  /** Cada cuánto el worker consume la outbox de avisos. */
+  notificacionesIntervaloMs: number;
   /** Si está definido, `/metrics` exige `authorization: Bearer <token>`. */
   metricsToken: string | null;
   /** Base OTLP/HTTP del colector OpenTelemetry (`http://host:4318`); sin ella no se exporta nada. */
@@ -64,6 +72,11 @@ export function cargarConfig(
     redisUrl: env.REDIS_URL ? env.REDIS_URL : null,
     lockTtlMs: Number(env.LOCK_TTL_MS ?? 10_000),
     lockPrefijo: 'cola:',
+    smtpUrl: env.SMTP_URL ? env.SMTP_URL : null,
+    smtpFrom: env.SMTP_FROM ?? 'ASOTRACMET <turnos@asotracmet.co>',
+    whatsappToken: env.WHATSAPP_TOKEN ? env.WHATSAPP_TOKEN : null,
+    whatsappPhoneId: env.WHATSAPP_PHONE_ID ? env.WHATSAPP_PHONE_ID : null,
+    notificacionesIntervaloMs: Number(env.NOTIFICACIONES_INTERVALO_MS ?? 5_000),
     metricsToken: env.METRICS_TOKEN ? env.METRICS_TOKEN : null,
     otelEndpoint: env.OTEL_EXPORTER_OTLP_ENDPOINT ? env.OTEL_EXPORTER_OTLP_ENDPOINT : null,
     otelServicio: env.OTEL_SERVICE_NAME ?? 'asotracmet-api',

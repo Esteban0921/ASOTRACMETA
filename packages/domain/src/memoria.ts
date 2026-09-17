@@ -15,6 +15,8 @@ import type {
   EventoAuditoria,
   Habilitacion,
   MotivoDeclinacion,
+  NotificacionOutbox,
+  NuevaNotificacion,
   NuevoEventoAuditoria,
   Oferta,
   Requerimiento,
@@ -39,6 +41,8 @@ export interface EstadoMemoria {
   ofertas: Oferta[];
   trs: Tr[];
   auditoria: EventoAuditoria[];
+  /** Outbox de avisos (spec §11): forma parte del estado, así el rollback también la deshace. */
+  outbox: NotificacionOutbox[];
 }
 
 export function estadoVacio(parametros: Parametros): EstadoMemoria {
@@ -56,6 +60,7 @@ export function estadoVacio(parametros: Parametros): EstadoMemoria {
     ofertas: [],
     trs: [],
     auditoria: [],
+    outbox: [],
   };
 }
 
@@ -251,6 +256,23 @@ class TransaccionMemoria implements Transaccion {
       id: this.ids.nuevo(),
       at: this.reloj.ahora().toISOString(),
       ...evento,
+    });
+  }
+
+  async notificar(aviso: NuevaNotificacion): Promise<void> {
+    const clave = aviso.clave ?? null;
+    if (clave && this.s.outbox.some((a) => a.clave === clave)) return;
+    this.s.outbox.push({
+      id: this.ids.nuevo(),
+      evento: aviso.evento,
+      destinos: aviso.destinos.map((d) => ({ ...d })),
+      datos: { ...aviso.datos },
+      clave,
+      creadaEn: this.reloj.ahora().toISOString(),
+      tomadaEn: null,
+      intentos: 0,
+      procesadaEn: null,
+      error: null,
     });
   }
 }

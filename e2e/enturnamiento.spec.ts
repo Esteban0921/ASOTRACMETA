@@ -22,8 +22,11 @@ async function codigoTotp(
   return ((await res.json()) as { codigo: string }).codigo;
 }
 
-async function ultimoMensaje(request: APIRequestContext, para: string) {
-  const res = await request.get(`${API}/api/v1/__e2e/mensajes?para=${encodeURIComponent(para)}`);
+/** `con` pide el último mensaje con enlace o código: los avisos de la bandeja no lo traen. */
+async function ultimoMensaje(request: APIRequestContext, para: string, con?: 'enlace' | 'codigo') {
+  const res = await request.get(
+    `${API}/api/v1/__e2e/mensajes?para=${encodeURIComponent(para)}${con ? `&con=${con}` : ''}`,
+  );
   expect(res.ok(), await res.text()).toBeTruthy();
   return (await res.json()) as { codigo?: string; enlace?: string; asunto: string };
 }
@@ -35,7 +38,7 @@ async function login(page: Page, request: APIRequestContext, email: string) {
     // Sin contraseña: la API envía el enlace de acceso.
     await page.getByTestId('login-submit').click();
     await expect(page.getByTestId('login-info')).toBeVisible();
-    const { enlace } = await ultimoMensaje(request, email);
+    const { enlace } = await ultimoMensaje(request, email, 'enlace');
     expect(enlace).toBeTruthy();
     await page.goto(enlace!);
   } else {
@@ -63,7 +66,7 @@ async function logout(page: Page) {
 async function tokenApi(request: APIRequestContext, email: string): Promise<string> {
   if (esMember(email)) {
     await request.post(`${API}/api/v1/auth/magic-link`, { data: { email } });
-    const { enlace } = await ultimoMensaje(request, email);
+    const { enlace } = await ultimoMensaje(request, email, 'enlace');
     const token = new URL(enlace!).searchParams.get('token');
     const res = await request.post(`${API}/api/v1/auth/magic-link/canjear`, { data: { token } });
     expect(res.ok(), await res.text()).toBeTruthy();
@@ -230,7 +233,7 @@ test('un administrador sin segundo factor lo configura en su primer acceso', asy
 
 test('el enlace de acceso del asociado es de un solo uso', async ({ page, request }) => {
   await login(page, request, 'member.fst189@asotracmet.test');
-  const { enlace } = await ultimoMensaje(request, 'member.fst189@asotracmet.test');
+  const { enlace } = await ultimoMensaje(request, 'member.fst189@asotracmet.test', 'enlace');
   await logout(page);
   await page.goto(enlace!);
   await expect(page.getByTestId('entrar-error')).toContainText('ya se usó');
@@ -476,4 +479,63 @@ test('PWA: manifest instalable, service worker activo y "Mi turno" legible sin c
   );
   await context.setOffline(false);
   await context.close();
+});
+
+test('el asociado recibe en su bandeja el aviso de su turno, ops el de la declinación, y las preferencias se guardan', async ({
+  page,
+  request,
+}) => {
+  const ops = await tokenApi(request, 'ops@asotracmet.test');
+  const superadmin = await tokenApi(request, 'superadmin@asotracmet.test');
+  const ofrecida = await request.post(`${API}/api/v1/requerimientos/req-hlb-castilla/ofertas`, {
+    headers: { authorization: `Bearer ${ops}` },
+  });
+  expect(ofrecida.status(), await ofrecida.text()).toBe(201);
+  const oferta = (await ofrecida.json()) as { id: string };
+  // El worker corre cada pocos segundos; aquí se dispara a mano para no esperar.
+  const entrega = await request.post(`${API}/api/v1/jobs/notificar`, {
+    headers: { authorization: `Bearer ${superadmin}` },
+  });
+  expect(entrega.ok(), await entrega.text()).toBeTruthy();
+  // El correo salió por el canal de mensajería (en e2e, memoria) antes del enlace de acceso.
+  const correo = await ultimoMensaje(request, 'member.fst189@asotracmet.test');
+  expect(correo.asunto).toBe('Nuevo turno para FST189');
+
+  await login(page, request, 'member.fst189@asotracmet.test');
+  await expect(page.getByTestId('nav-avisos')).toContainText('(1)');
+  await page.getByTestId('nav-avisos').click();
+  const aviso = page.getByTestId('aviso-oferta.abierta');
+  await expect(aviso).toContainText('Nuevo turno para FST189');
+  await aviso.getByTestId('aviso-leer').click();
+  await expect(aviso).toHaveAttribute('data-leida', 'si');
+  await expect(page.getByTestId('nav-avisos')).toHaveText('Avisos');
+
+  await page.getByTestId('pref-whatsapp').check();
+  await page.getByTestId('pref-celular').fill('+573001234567');
+  await page.getByTestId('pref-guardar').click();
+  await expect(page.getByTestId('pref-mensaje')).toContainText('guardadas');
+  const member = await tokenApi(request, 'member.fst189@asotracmet.test');
+  const prefs = await request.get(`${API}/api/v1/me/preferencias`, {
+    headers: { authorization: `Bearer ${member}` },
+  });
+  expect(await prefs.json()).toEqual({ correo: true, whatsapp: true, celular: '+573001234567' });
+
+  // Declina por API y ops recibe el aviso en su bandeja, con el motivo.
+  const declinada = await request.post(`${API}/api/v1/ofertas/${oferta.id}/declinar`, {
+    headers: { authorization: `Bearer ${member}` },
+    data: { motivoId: 'mot-mantenimiento', nota: 'Cambio de llantas' },
+  });
+  expect(declinada.ok(), await declinada.text()).toBeTruthy();
+  await request.post(`${API}/api/v1/jobs/notificar`, {
+    headers: { authorization: `Bearer ${superadmin}` },
+  });
+  const deOps = await request.get(`${API}/api/v1/me/notificaciones`, {
+    headers: { authorization: `Bearer ${ops}` },
+  });
+  expect((await deOps.json()) as Array<{ evento: string; texto: string }>).toEqual([
+    expect.objectContaining({
+      evento: 'oferta.declinada',
+      texto: expect.stringContaining('Cambio de llantas') as unknown as string,
+    }),
+  ]);
 });

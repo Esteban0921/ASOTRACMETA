@@ -7,6 +7,7 @@ import { Finance } from './paginas/Finance';
 import { Hseq } from './paginas/Hseq';
 import { Login } from './paginas/Login';
 import { Me } from './paginas/Me';
+import { Notificaciones } from './paginas/Notificaciones';
 import { Ops } from './paginas/Ops';
 import { Parametros } from './paginas/Parametros';
 import { Tablero } from './paginas/Tablero';
@@ -38,6 +39,7 @@ export default function App() {
       <Route element={<RutaProtegida />}>
         <Route path="/ops" element={<Ops />} />
         <Route path="/me" element={<Me />} />
+        <Route path="/notificaciones" element={<Notificaciones />} />
         <Route path="/hseq" element={<Hseq />} />
         <Route path="/finance" element={<Finance />} />
         <Route path="/tablero" element={<Tablero />} />

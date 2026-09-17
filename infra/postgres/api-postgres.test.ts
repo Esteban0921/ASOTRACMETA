@@ -5,7 +5,7 @@ import { RelojFijo } from '@asotracmet/domain';
 import { construirApp } from '@asotracmet/api/app';
 import { claveDesdeEntorno } from '@asotracmet/api/cifrado';
 import { MensajeriaMemoria } from '@asotracmet/api/mensajeria';
-import { almacenamientoPostgres } from '@asotracmet/api/persistencia';
+import { almacenamientoPostgres, type Almacenamiento } from '@asotracmet/api/persistencia';
 import { PASSWORD_DEV, secretoTotpSemilla } from '@asotracmet/api/seed';
 import { sembrarPostgres, uuidSemilla } from '@asotracmet/api/seed-postgres';
 import { codigoTotp } from '@asotracmet/api/totp';
@@ -24,6 +24,7 @@ describe.skipIf(!url)('API sobre Postgres (spec §20)', () => {
   let app: FastifyInstance;
   let reloj: RelojFijo;
   let mensajeria: MensajeriaMemoria;
+  let almacenamiento: Almacenamiento;
   let motivoMantenimientoId: string;
   let clienteHlbId: string;
 
@@ -68,13 +69,15 @@ describe.skipIf(!url)('API sobre Postgres (spec §20)', () => {
   /** Deja solo los maestros: la operación y las sesiones se rehacen en cada test. */
   async function limpiarOperacion(): Promise<void> {
     await pool.query(
-      'truncate audit_log, ofertas, trs, requerimientos, cola_posiciones, sesiones, otp_codes, metricas_mes restart identity cascade',
+      'truncate audit_log, ofertas, trs, requerimientos, cola_posiciones, sesiones, otp_codes, metricas_mes, notificaciones, notificaciones_outbox restart identity cascade',
     );
     await pool.query(
       `update parametros set value = '{"prefix": "TR-", "next": 41947}'::jsonb where key = 'secuencia_tr'`,
     );
     // Anti-replay TOTP (TASK-0040): el reloj vuelve a AHORA, así que el último paso aceptado también.
-    await pool.query('update usuarios set totp_ultimo_paso = null');
+    await pool.query(
+      'update usuarios set totp_ultimo_paso = null, preferencias_notificacion = default',
+    );
     await sembrarPostgres(pool, new Date(AHORA), CLAVE);
     mensajeria.limpiar();
   }
@@ -84,11 +87,12 @@ describe.skipIf(!url)('API sobre Postgres (spec §20)', () => {
     pool = new pg.Pool({ connectionString: url, max: 10 });
     reloj = new RelojFijo(AHORA);
     mensajeria = new MensajeriaMemoria(reloj);
+    almacenamiento = almacenamientoPostgres({ pool });
     app = (
       await construirApp({
         config: { logger: false, loginRateLimitMax: 10_000, persistencia: 'postgres' },
         reloj,
-        almacenamiento: almacenamientoPostgres({ pool }),
+        almacenamiento,
         mensajeria,
       })
     ).app;
@@ -869,5 +873,128 @@ describe.skipIf(!url)('API sobre Postgres (spec §20)', () => {
       headers: conToken(viewer),
     });
     expect(vivo.json()).toMatchObject({ ofertas: { ofrecidas: 1, aceptadas: 1 } });
+  });
+
+  it('outbox de avisos en la transacción del motor; bandeja personal bajo RLS; el worker toma con skip locked', async () => {
+    const ops = await login('ops@asotracmet.test');
+    const ofrecida = await app.inject({
+      method: 'POST',
+      url: `/api/v1/requerimientos/${REQ_HLB}/ofertas`,
+      headers: conToken(ops),
+    });
+    expect(ofrecida.statusCode, ofrecida.body).toBe(201);
+    const { rows: outbox } = await pool.query<{ evento: string; procesada_en: Date | null }>(
+      'select evento, procesada_en from notificaciones_outbox',
+    );
+    expect(outbox).toEqual([{ evento: 'oferta.abierta', procesada_en: null }]);
+
+    // Una transacción que se revierte no deja aviso (ADR-0006).
+    await expect(
+      almacenamiento.uow.ejecutar('C100', async (tx) => {
+        await tx.notificar({
+          evento: 'recaudo.pendiente',
+          destinos: [{ rol: 'admin_finance' }],
+          datos: {},
+        });
+        throw new Error('se cae');
+      }),
+    ).rejects.toThrow('se cae');
+    const cuenta = async () =>
+      (await pool.query<{ n: number }>('select count(*)::int as n from notificaciones_outbox'))
+        .rows[0]?.n;
+    expect(await cuenta()).toBe(1);
+
+    const superadmin = await login('superadmin@asotracmet.test');
+    const entrega = await app.inject({
+      method: 'POST',
+      url: '/api/v1/jobs/notificar',
+      headers: conToken(superadmin),
+    });
+    expect(entrega.json()).toEqual({ avisos: 1, entregas: 1, fallos: 0 });
+
+    const member = await login('member.fst189@asotracmet.test');
+    const bandeja = await app.inject({
+      method: 'GET',
+      url: '/api/v1/me/notificaciones',
+      headers: conToken(member),
+    });
+    expect(bandeja.json()).toMatchObject([
+      {
+        evento: 'oferta.abierta',
+        asunto: 'Nuevo turno para FST189',
+        canales: { correo: 'enviada' },
+      },
+    ]);
+    const deOps = await app.inject({
+      method: 'GET',
+      url: '/api/v1/me/notificaciones',
+      headers: conToken(ops),
+    });
+    expect(deOps.json()).toEqual([]);
+
+    // RLS: con el rol de la app, otro usuario no ve esa fila ni consultando la tabla entera.
+    const cliente = await pool.connect();
+    try {
+      await cliente.query('begin');
+      await cliente.query('set local role asotracmet_app');
+      await cliente.query(
+        "select set_config('app.rol', 'member', true), set_config('app.usuario_id', $1, true)",
+        [uuidSemilla('usr-member-swi750')],
+      );
+      const ajeno = await cliente.query<{ n: number }>(
+        'select count(*)::int as n from notificaciones',
+      );
+      expect(ajeno.rows[0]?.n).toBe(0);
+      await cliente.query("select set_config('app.usuario_id', $1, true)", [
+        uuidSemilla('usr-member-fst189'),
+      ]);
+      const propio = await cliente.query<{ n: number }>(
+        'select count(*)::int as n from notificaciones',
+      );
+      expect(propio.rows[0]?.n).toBe(1);
+      await cliente.query('rollback');
+    } finally {
+      cliente.release();
+    }
+
+    // Marcar leída persiste (update bajo RLS con app.usuario_id).
+    const id = (bandeja.json() as Array<{ id: string }>)[0]!.id;
+    const leida = await app.inject({
+      method: 'POST',
+      url: `/api/v1/me/notificaciones/${id}/leer`,
+      headers: conToken(member),
+    });
+    expect(leida.statusCode, leida.body).toBe(200);
+    const sinLeer = await app.inject({
+      method: 'GET',
+      url: '/api/v1/me/notificaciones?noLeidas=true',
+      headers: conToken(member),
+    });
+    expect(sinLeer.json()).toEqual([]);
+
+    // Jobs: la clave deduplica; un aviso bloqueado por otra transacción no lo toma el worker.
+    const ahora = reloj.ahora().toISOString();
+    const digest = {
+      evento: 'recaudo.pendiente' as const,
+      destinos: [{ rol: 'admin_finance' as const }],
+      datos: { hoy: '2026-09-16', cantidad: 1, valor: 10 },
+      clave: 'recaudo.pendiente:2026-09-16',
+    };
+    expect(await almacenamiento.notificaciones.encolar(digest, ahora)).toBe(true);
+    expect(await almacenamiento.notificaciones.encolar(digest, ahora)).toBe(false);
+    const bloqueo = await pool.connect();
+    try {
+      await bloqueo.query('begin');
+      await bloqueo.query(
+        "select id from notificaciones_outbox where clave = 'recaudo.pendiente:2026-09-16' for update",
+      );
+      expect(await almacenamiento.notificaciones.tomarPendientes(10, ahora, 60_000)).toEqual([]);
+      await bloqueo.query('rollback');
+    } finally {
+      bloqueo.release();
+    }
+    const tomados = await almacenamiento.notificaciones.tomarPendientes(10, ahora, 60_000);
+    expect(tomados.map((a) => a.evento)).toEqual(['recaudo.pendiente']);
+    expect(tomados[0]).toMatchObject({ intentos: 1, tomadaEn: ahora, procesadaEn: null });
   });
 });

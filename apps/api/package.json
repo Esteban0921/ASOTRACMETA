@@ -20,7 +20,7 @@
     "start": "node dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node24 --sourcemap --outfile=dist/index.mjs --external:fastify --external:@fastify/* --external:pg --external:uuid --external:zod --external:@opentelemetry/* --external:ioredis",
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node24 --sourcemap --outfile=dist/index.mjs --external:fastify --external:@fastify/* --external:pg --external:uuid --external:zod --external:@opentelemetry/* --external:ioredis --external:nodemailer",
     "start:tsx": "tsx src/index.ts"
   },
   "dependencies": {
@@ -38,12 +38,14 @@
     "@opentelemetry/sdk-trace-node": "^2.11.0",
     "fastify": "^5.12.5",
     "ioredis": "^6.0.0",
+    "nodemailer": "^10.0.10",
     "pg": "^8.23.0",
     "uuid": "^14.0.2",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^24.1.0",
+    "@types/nodemailer": "^8.0.2",
     "@types/pg": "^8.23.1",
     "esbuild": "^0.28.2",
     "tsx": "^4.23.13",

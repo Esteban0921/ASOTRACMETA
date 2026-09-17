@@ -11,6 +11,7 @@ import {
   AsignarVehiculosSchema,
   CambiarRolSchema,
   CrearUsuarioSchema,
+  PREFERENCIAS_POR_DEFECTO,
 } from '@asotracmet/shared';
 import { hashPassword } from '../auth/passwords.js';
 import { actorDe, exigir } from '../auth/plugin.js';
@@ -104,6 +105,7 @@ export function rutasUsuarios(app: FastifyInstance, deps: DepsUsuarios): void {
       passwordHash: entrada.password ? hashPassword(entrada.password) : null,
       totpSecretEnc: null,
       totpUltimoPaso: null,
+      preferencias: { ...PREFERENCIAS_POR_DEFECTO },
       activo: true,
       asociadoId: entrada.asociadoId ?? null,
       vehiculoIds: entrada.vehiculoIds ?? [],

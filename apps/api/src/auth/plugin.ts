@@ -61,7 +61,11 @@ export function registrarAuth(app: FastifyInstance, opciones: OpcionesAuth): voi
       rol: activa.usuario.rol,
       vehiculoIds: activa.usuario.vehiculoIds,
     };
-    fijarContexto({ rol: activa.usuario.rol, vehiculoIds: activa.usuario.vehiculoIds });
+    fijarContexto({
+      rol: activa.usuario.rol,
+      vehiculoIds: activa.usuario.vehiculoIds,
+      usuarioId: activa.usuario.id,
+    });
   });
 }
 

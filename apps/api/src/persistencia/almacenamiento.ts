@@ -12,6 +12,9 @@ import type { Consultas } from '../consultas/tipos.js';
 import { MaestrosMemoria } from '../maestros/memoria.js';
 import { MaestrosPostgres } from '../maestros/postgres.js';
 import type { RepositorioMaestros } from '../maestros/tipos.js';
+import { NotificacionesMemoria } from '../notificaciones/memoria.js';
+import { NotificacionesPostgres } from '../notificaciones/postgres.js';
+import type { RepositorioNotificaciones } from '../notificaciones/tipos.js';
 import { crearSeed } from '../seed.js';
 import { AlmacenUsuarios, UsuariosPostgres, type RepositorioUsuarios } from '../usuarios.js';
 import { MetricasMemoria } from '../tablero/memoria.js';
@@ -36,6 +39,8 @@ export interface Almacenamiento {
   readonly maestros: RepositorioMaestros;
   readonly viajes: RepositorioViajes;
   readonly metricas: RepositorioMetricas;
+  /** Outbox de avisos y bandeja in-app (spec §11, TASK-0026). */
+  readonly notificaciones: RepositorioNotificaciones;
   /**
    * Traduce un identificador legible de la semilla al que usa este almacén.
    * En memoria es el mismo; en Postgres, su UUID determinista.
@@ -63,6 +68,7 @@ export function almacenamientoMemoria(opciones: {
   maestros.cargar(semilla.maestros);
   const viajes = new ViajesMemoria(almacen, maestros);
   const metricas = new MetricasMemoria();
+  const notificaciones = new NotificacionesMemoria(almacen, opciones.ids);
   return {
     clase: 'memoria',
     uow: almacen,
@@ -72,6 +78,7 @@ export function almacenamientoMemoria(opciones: {
     maestros,
     viajes,
     metricas,
+    notificaciones,
     idSemilla: (nombre) => nombre,
     reiniciar: async () => {
       const nuevo = crearSeed(opciones.reloj.ahora(), opciones.claveCifrado);
@@ -81,6 +88,7 @@ export function almacenamientoMemoria(opciones: {
       maestros.cargar(nuevo.maestros);
       viajes.limpiar();
       metricas.limpiar();
+      notificaciones.limpiar();
     },
     cerrar: async () => undefined,
   };
@@ -97,6 +105,7 @@ export function almacenamientoPostgres(opciones: { pool: pg.Pool }): Almacenamie
     maestros: new MaestrosPostgres(opciones.pool),
     viajes: new ViajesPostgres(opciones.pool),
     metricas: new MetricasPostgres(opciones.pool),
+    notificaciones: new NotificacionesPostgres(opciones.pool),
     idSemilla: uuidSemilla,
     cerrar: () => almacen.cerrar(),
   };

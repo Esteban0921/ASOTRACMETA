@@ -10,3 +10,4 @@ export * from './schemas-maestros.js';
 export * from './schemas-viajes.js';
 export * from './recaudo.js';
 export * from './documentos.js';
+export * from './notificaciones.js';

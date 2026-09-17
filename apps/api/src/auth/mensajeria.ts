@@ -26,9 +26,12 @@ export class MensajeriaMemoria implements Mensajeria {
     this.mensajes.push({ ...mensaje, enviadoEn: this.reloj.ahora().toISOString() });
   }
 
-  ultimoPara(para: string): Mensaje | undefined {
+  /** Último mensaje para alguien; `con` exige que traiga enlace o código (los avisos no lo traen). */
+  ultimoPara(para: string, con?: 'enlace' | 'codigo'): Mensaje | undefined {
     const normalizado = para.trim().toLowerCase();
-    return [...this.mensajes].reverse().find((m) => m.para.toLowerCase() === normalizado);
+    return [...this.mensajes]
+      .reverse()
+      .find((m) => m.para.toLowerCase() === normalizado && (!con || m[con] !== undefined));
   }
 
   limpiar(): void {

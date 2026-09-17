@@ -1,6 +1,9 @@
+import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { esSoloPropio, puede } from '@asotracmet/shared';
+import { api } from '../api/cliente';
+import type { Notificacion } from '../api/tipos';
 import { useSesion } from '../sesion/contexto';
 import { EstadoConexion } from './EstadoConexion';
 
@@ -15,6 +18,14 @@ export function Layout({ children }: { children: ReactNode }) {
   const veHseq = rol ? puede(rol, 'vehiculos', 'R') && rol !== 'member' : false;
   const veFinance = rol ? puede(rol, 'viajes', 'R') && rol !== 'member' : false;
   const veTablero = rol ? puede(rol, 'trs', 'R') && rol !== 'member' : false;
+  // Bandeja de avisos (spec §11): el contador se refresca solo; la página marca leídas.
+  const noLeidas = useQuery({
+    queryKey: ['me', 'notificaciones', 'no-leidas'],
+    queryFn: () => api<Notificacion[]>('/me/notificaciones?noLeidas=true&limite=50'),
+    enabled: Boolean(sesion),
+    refetchInterval: 15_000,
+  });
+  const sinLeer = noLeidas.data?.length ?? 0;
 
   return (
     <div className="app">
@@ -33,6 +44,13 @@ export function Layout({ children }: { children: ReactNode }) {
               Mi turno
             </Link>
           )}
+          <Link
+            to="/notificaciones"
+            className={pathname === '/notificaciones' ? 'activo' : ''}
+            data-testid="nav-avisos"
+          >
+            Avisos{sinLeer > 0 ? ` (${sinLeer})` : ''}
+          </Link>
           {veHseq && (
             <Link
               to="/hseq"

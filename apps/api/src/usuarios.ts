@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import type { Rol } from '@asotracmet/shared';
+import { preferenciasDesde, type PreferenciasNotificacion, type Rol } from '@asotracmet/shared';
 
 export interface Usuario {
   id: string;
@@ -16,6 +16,8 @@ export interface Usuario {
   asociadoId: string | null;
   /** Scope `member` (tabla usuario_vehiculos). */
   vehiculoIds: string[];
+  /** Canales opt-in de avisos (spec §11); la bandeja in-app siempre. */
+  preferencias: PreferenciasNotificacion;
 }
 
 export interface UsuarioPublico {
@@ -54,10 +56,12 @@ export interface RepositorioUsuarios {
   fijarTotpSecret(usuarioId: string, secretEnc: string | null): Promise<void>;
   /** Anti-replay (TASK-0040): registra el paso de 30 s del último código aceptado. */
   fijarTotpUltimoPaso(usuarioId: string, paso: number): Promise<void>;
+  /** Preferencias de notificación del propio usuario (TASK-0026). */
+  fijarPreferencias(usuarioId: string, preferencias: PreferenciasNotificacion): Promise<void>;
 }
 
 function copia(u: Usuario): Usuario {
-  return { ...u, vehiculoIds: [...u.vehiculoIds] };
+  return { ...u, vehiculoIds: [...u.vehiculoIds], preferencias: { ...u.preferencias } };
 }
 
 /** Almacén de usuarios en memoria (fase puente). */
@@ -102,6 +106,14 @@ export class AlmacenUsuarios implements RepositorioUsuarios {
     if (usuario) usuario.totpUltimoPaso = paso;
   }
 
+  async fijarPreferencias(
+    usuarioId: string,
+    preferencias: PreferenciasNotificacion,
+  ): Promise<void> {
+    const usuario = this.lista.find((u) => u.id === usuarioId);
+    if (usuario) usuario.preferencias = { ...preferencias };
+  }
+
   todos(): Usuario[] {
     return this.lista.map(copia);
   }
@@ -113,7 +125,7 @@ export class AlmacenUsuarios implements RepositorioUsuarios {
 
 const SELECT_USUARIO = `
   select u.id, u.email, u.nombre, u.rol, u.password_hash, u.totp_secret_enc, u.totp_ultimo_paso,
-         u.activo, u.asociado_id,
+         u.preferencias_notificacion, u.activo, u.asociado_id,
          coalesce(
            array_agg(uv.vehiculo_id) filter (where uv.vehiculo_id is not null),
            '{}'
@@ -136,6 +148,7 @@ function aUsuario(f: Record<string, unknown>): Usuario {
     activo: f.activo === true,
     asociadoId: f.asociado_id === null ? null : String(f.asociado_id),
     vehiculoIds: ((f.vehiculo_ids ?? []) as string[]).map(String),
+    preferencias: preferenciasDesde(f.preferencias_notificacion),
   };
 }
 
@@ -197,6 +210,16 @@ export class UsuariosPostgres implements RepositorioUsuarios {
       usuarioId,
       paso,
     ]);
+  }
+
+  async fijarPreferencias(
+    usuarioId: string,
+    preferencias: PreferenciasNotificacion,
+  ): Promise<void> {
+    await this.pool.query(
+      'update usuarios set preferencias_notificacion = $2::jsonb, updated_at = now() where id = $1',
+      [usuarioId, JSON.stringify(preferencias)],
+    );
   }
 
   private async reemplazarVehiculos(c: pg.PoolClient, u: Usuario): Promise<void> {

@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto';
-import { PARAMETROS_DEFAULT, claseColaDe, type ClaseVehiculo, type Rol } from '@asotracmet/shared';
+import {
+  PARAMETROS_DEFAULT,
+  claseColaDe,
+  type ClaseVehiculo,
+  type Rol,
+  PREFERENCIAS_POR_DEFECTO,
+} from '@asotracmet/shared';
 import { estadoVacio, type EstadoMemoria } from '@asotracmet/domain';
 import { cifrar } from './auth/cifrado.js';
 import { hashPassword } from './auth/passwords.js';
@@ -217,6 +223,7 @@ export function crearSeed(
     passwordHash,
     totpSecretEnc: enrolado ? cifrar(secretoTotpSemilla(email), claveCifrado) : null,
     totpUltimoPaso: null,
+    preferencias: { ...PREFERENCIAS_POR_DEFECTO },
     activo: true,
     asociadoId: null,
     vehiculoIds: [],
@@ -237,6 +244,7 @@ export function crearSeed(
     passwordHash: null,
     totpSecretEnc: null,
     totpUltimoPaso: null,
+    preferencias: { ...PREFERENCIAS_POR_DEFECTO },
     activo: true,
     asociadoId,
     vehiculoIds,
@@ -266,6 +274,7 @@ export function crearSeed(
       passwordHash: null,
       totpSecretEnc: null,
       totpUltimoPaso: null,
+      preferencias: { ...PREFERENCIAS_POR_DEFECTO },
       activo: false,
       asociadoId: null,
       vehiculoIds: [],

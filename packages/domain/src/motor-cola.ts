@@ -134,6 +134,21 @@ export class MotorCola {
       };
       await tx.guardarTr(tr);
       await tx.auditar(this.evento(input.actor, 'tr.crear', 'trs', null, tr));
+      await tx.notificar({
+        evento: 'tr.asignado',
+        destinos: [
+          { asociadoId: oferta.asociadoId, vehiculoId: oferta.vehiculoId },
+          { rol: 'admin_ops' },
+        ],
+        datos: {
+          trId: tr.id,
+          codigo: tr.codigo,
+          vehiculoId: tr.vehiculoId,
+          clienteId: tr.clienteId,
+          claseCola: tr.claseCola,
+          fechaAsignacion: tr.fechaAsignacion,
+        },
+      });
 
       let posiciones = await tx.posiciones(claseCola);
       posiciones = actualizarPosicion(posiciones, oferta.vehiculoId, {
@@ -191,6 +206,16 @@ export class MotorCola {
       };
       await tx.guardarOferta(declinada);
       await tx.auditar(this.evento(input.actor, 'oferta.declinar', 'ofertas', oferta, declinada));
+      await tx.notificar({
+        evento: 'oferta.declinada',
+        destinos: [{ rol: 'admin_ops' }],
+        datos: {
+          ofertaId: oferta.id,
+          vehiculoId: oferta.vehiculoId,
+          motivo: motivo.nombre,
+          nota: declinada.nota,
+        },
+      });
 
       await this.aplicarPoliticaDeclinacion(
         tx,
@@ -327,6 +352,17 @@ export class MotorCola {
       };
       await tx.guardarTr(cancelado);
       await tx.auditar(this.evento(input.actor, 'tr.cancelar', 'trs', tr, cancelado));
+      const duenoTr = await tx.vehiculo(tr.vehiculoId);
+      await tx.notificar({
+        evento: 'tr.cancelado',
+        destinos: [{ asociadoId: duenoTr?.asociadoId, vehiculoId: tr.vehiculoId }],
+        datos: {
+          trId: tr.id,
+          codigo: tr.codigo,
+          vehiculoId: tr.vehiculoId,
+          motivo: input.motivo,
+        },
+      });
 
       let siguiente: Oferta | null = null;
       if (parametros.tr_cancelado_regresa_al_mismo) {
@@ -759,6 +795,19 @@ export class MotorCola {
       );
     }
     await tx.auditar(this.evento(actor, 'oferta.crear', 'ofertas', null, oferta));
+    // Aviso al asociado en la misma transacción (outbox, spec §11): sin oferta no hay aviso.
+    await tx.notificar({
+      evento: 'oferta.abierta',
+      destinos: [{ asociadoId: oferta.asociadoId, vehiculoId: oferta.vehiculoId }],
+      datos: {
+        ofertaId: oferta.id,
+        vehiculoId: oferta.vehiculoId,
+        requerimientoId: requerimiento.id,
+        clienteId: requerimiento.clienteId,
+        claseCola: requerimiento.claseCola,
+        expiraEn: oferta.expiraEn,
+      },
+    });
     return oferta;
   }
 

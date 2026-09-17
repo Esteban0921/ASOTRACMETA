@@ -41,7 +41,7 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 | TASK-0025 | Migración controlada desde el Excel + informe de excepciones  | 0-1  | alta      | hecha       |
 | TASK-0042 | Puertos del host configurables en `infra/compose.yaml`        | 0    | media     | hecha       |
 | TASK-0043 | Soportes HSEQ en object storage (subida de archivos)         | 3    | media     | pendiente   |
-| TASK-0026 | Notificaciones (in-app, email, WhatsApp opt-in) con outbox    | 1-2  | media     | pendiente   |
+| TASK-0026 | Notificaciones (in-app, email, WhatsApp opt-in) con outbox    | 1-2  | media     | hecha         |
 | TASK-0027 | Viajes, tarifas, recaudo 3% y pantalla finance                | 2    | alta      | hecha         |
 | TASK-0028 | HSEQ: documentos, semáforo, habilitaciones, job nocturno      | 3    | alta      | hecha         |
 | TASK-0029 | Tablero viewer y métricas de equidad (`metricas_mes`)         | 2    | media     | hecha         |
@@ -432,15 +432,16 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 
 ### TASK-0026 — Notificaciones
 
-- **Estado:** pendiente
+- **Estado:** hecha (2026-09-17)
 - **Fase:** 1-2
 - **Prioridad:** media
 - **Contexto:** Spec §11: eventos `oferta.abierta`, `oferta.por_expirar`, `oferta.declinada`, `tr.asignado`, `tr.cancelado`, `documento.por_vencer`, `recaudo.pendiente`; canales in-app, email, WhatsApp opt-in; plantillas; outbox simple. WhatsApp es canal, no estado.
 - **Criterio de done:**
-  - [ ] Outbox transaccional y worker (BullMQ)
-  - [ ] Preferencias de canal por usuario
-- **Referencias:** spec §11, §14, §18
-- **Evidencia:** —
+  - [x] Outbox transaccional y worker (sin BullMQ: la outbox en Postgres es la cola, ADR-0006)
+  - [x] Preferencias de canal por usuario
+  - [x] Eventos §11: `oferta.abierta`, `oferta.por_expirar`, `oferta.declinada`, `tr.asignado`, `tr.cancelado`, `documento.por_vencer`, `recaudo.pendiente`; canales in-app, correo (SMTP) y WhatsApp (Cloud API) opt-in; plantillas con variables
+- **Referencias:** spec §11, §14, §18; ARCHITECTURE §6.11, §12; ADR-0006
+- **Evidencia:** Migración `0016_notificaciones` (`notificaciones_outbox`, `notificaciones` con RLS por `app_usuario_id()`, `usuarios.preferencias_notificacion`). El motor escribe el aviso con `tx.notificar` en la misma transacción (`packages/domain/src/notificaciones.test.ts`: el rollback se lleva el aviso, la clave deduplica). `WorkerNotificaciones` (`apps/api/src/notificaciones/`) consume la outbox (`for update skip locked`), resuelve destinatarios por rol/asociado/placa, redacta (`plantillas.ts`) y deja la bandeja por usuario enviando correo/WhatsApp según preferencias; jobs `avisos.ts` idempotentes por clave. Rutas `GET/POST /me/notificaciones`, `GET/PATCH /me/preferencias`, `POST /jobs/notificar`, `POST /jobs/avisos`. Proveedores `mensajeria/proveedores.ts` (SMTP con nodemailer, WhatsApp Cloud API, enrutada; sin configuración cae a consola). Web: `/notificaciones` (bandeja + preferencias) y enlace "Avisos (n)" para todos los roles. Tests: `apps/api/src/notificaciones.test.ts` (5: entrega a bandeja + correo, bandeja personal, leída idempotente; tr.asignado a asociado y ops; declinar avisa a ops; preferencias con validación y auditoría sin PII; canal caído → `fallida`, repositorio caído → reintento y cierre; jobs por tiempo idempotentes), `mensajeria/proveedores.test.ts` (3), dominio (3), Postgres (`api-postgres.test.ts`: outbox en la transacción, RLS de la bandeja, skip locked). `pnpm check` → 197 passed (2026-09-17); `pnpm test:db` → 28 passed (16 migraciones); `pnpm test:e2e` → 16 passed (incluye "el asociado recibe en su bandeja el aviso de su turno, ops el de la declinación, y las preferencias se guardan"); `pnpm build` en verde (`nodemailer` externo). Fuera de alcance: plantillas aprobadas de WhatsApp fuera de la ventana de 24 h (documentado en despliegue.md).
 
 ### TASK-0027 — Viajes, tarifas, recaudo y pantalla finance
 

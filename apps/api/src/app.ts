@@ -14,12 +14,16 @@ import {
   type GeneradorIds,
   type Reloj,
 } from '@asotracmet/domain';
-import { MensajeriaConsola, MensajeriaMemoria, type Mensajeria } from './auth/mensajeria.js';
+import { MensajeriaMemoria, type Mensajeria } from './auth/mensajeria.js';
 import { registrarAuth } from './auth/plugin.js';
 import { ServicioAuth } from './auth/servicio.js';
 import { fechaLocal } from '@asotracmet/shared';
 import { cargarConfig, type Config } from './config.js';
 import { LockRedis, conLockDistribuido, type AlmacenLock } from './lock-cola.js';
+import { mensajeriaDeConfig } from './mensajeria/proveedores.js';
+import { correrAvisos, type ResumenAvisos } from './notificaciones/avisos.js';
+import { WorkerNotificaciones } from './notificaciones/worker.js';
+import { rutasNotificaciones } from './rutas/notificaciones.js';
 import { RegistroMetricas, pingRedis } from './observabilidad.js';
 import { iniciarTelemetria, trazarUnidadDeTrabajo, type Telemetria } from './telemetria.js';
 import { registrarManejoErrores } from './errores.js';
@@ -67,6 +71,9 @@ export interface AppConstruida {
   servicioAuth: ServicioAuth;
   metricas: RegistroMetricas;
   telemetria: Telemetria;
+  /** Worker de avisos: `index.ts` lo arranca; los tests lo disparan con `procesar()`. */
+  worker: WorkerNotificaciones;
+  correrAvisos: () => Promise<ResumenAvisos>;
 }
 
 const IDS_UUID_V7: GeneradorIds = { nuevo: () => uuidv7() };
@@ -129,7 +136,7 @@ export async function construirApp(opciones: OpcionesApp = {}): Promise<AppConst
     opciones.mensajeria ??
     (config.mensajeria === 'memoria'
       ? new MensajeriaMemoria(reloj)
-      : new MensajeriaConsola((linea) => app.log.info(linea)));
+      : mensajeriaDeConfig(config, (linea) => app.log.info(linea)));
 
   const servicioAuth = new ServicioAuth({
     usuarios: almacenamiento.usuarios,
@@ -139,6 +146,32 @@ export async function construirApp(opciones: OpcionesApp = {}): Promise<AppConst
     ids,
     config,
   });
+
+  // Notificaciones (§11, ADR-0006): el motor deja el aviso en la outbox; este worker lo entrega.
+  const worker = new WorkerNotificaciones({
+    notificaciones: almacenamiento.notificaciones,
+    usuarios: almacenamiento.usuarios,
+    consultas: almacenamiento.consultas,
+    maestros: almacenamiento.maestros,
+    mensajeria,
+    reloj,
+    ids,
+    urlWeb: config.urlWeb,
+    log: (nivel, datos, mensaje) => app.log[nivel](datos, mensaje),
+  });
+  const correrAvisosHoy = async (): Promise<ResumenAvisos> => {
+    const { timezone } = await almacenamiento.consultas.parametros();
+    return correrAvisos(
+      {
+        notificaciones: almacenamiento.notificaciones,
+        consultas: almacenamiento.consultas,
+        maestros: almacenamiento.maestros,
+        viajes: almacenamiento.viajes,
+        reloj,
+      },
+      fechaLocal(reloj.ahora(), timezone),
+    );
+  };
 
   await app.register(cors, { origin: config.corsOrigins, credentials: true });
   await app.register(rateLimit, { global: false });
@@ -278,6 +311,14 @@ export async function construirApp(opciones: OpcionesApp = {}): Promise<AppConst
     uow,
     reloj,
   });
+  rutasNotificaciones(app, {
+    notificaciones: almacenamiento.notificaciones,
+    usuarios: almacenamiento.usuarios,
+    worker,
+    correrAvisos: correrAvisosHoy,
+    uow,
+    reloj,
+  });
 
   if (config.modoE2e) {
     // Solo e2e (RULE-023): reset al seed y lectura de códigos/enlaces que en producción viajan
@@ -289,9 +330,11 @@ export async function construirApp(opciones: OpcionesApp = {}): Promise<AppConst
       return { ok: true };
     });
     app.get('/api/v1/__e2e/mensajes', async (req, reply) => {
-      const { para } = z.object({ para: z.email() }).parse(req.query);
+      const { para, con } = z
+        .object({ para: z.email(), con: z.enum(['enlace', 'codigo']).optional() })
+        .parse(req.query);
       const mensaje =
-        mensajeria instanceof MensajeriaMemoria ? mensajeria.ultimoPara(para) : undefined;
+        mensajeria instanceof MensajeriaMemoria ? mensajeria.ultimoPara(para, con) : undefined;
       if (!mensaje) throw new ErrorDominio('NOT_FOUND', 'Sin mensajes para ese correo');
       return reply.send(mensaje);
     });
@@ -306,6 +349,7 @@ export async function construirApp(opciones: OpcionesApp = {}): Promise<AppConst
   }
 
   app.addHook('onClose', async () => {
+    worker.detener();
     await lock?.cerrar();
     await almacenamiento.cerrar();
     await telemetria.apagar();
@@ -322,6 +366,8 @@ export async function construirApp(opciones: OpcionesApp = {}): Promise<AppConst
     servicioAuth,
     metricas,
     telemetria,
+    worker,
+    correrAvisos: correrAvisosHoy,
   };
 }
 

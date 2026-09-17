@@ -6,6 +6,7 @@ import type {
   Documento,
   Habilitacion,
   MotivoDeclinacion,
+  NuevaNotificacion,
   NuevoEventoAuditoria,
   Oferta,
   Requerimiento,
@@ -60,6 +61,8 @@ export interface Transaccion {
 
   /** Append-only. Se escribe en la misma transacción que la mutación (RULE-012). */
   auditar(evento: NuevoEventoAuditoria): Promise<void>;
+  /** Outbox de avisos (spec §11, ADR-0006): en la misma transacción que la mutación. */
+  notificar(aviso: NuevaNotificacion): Promise<void>;
 }
 
 export interface UnidadDeTrabajo {
