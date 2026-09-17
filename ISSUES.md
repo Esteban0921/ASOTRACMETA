@@ -1,6 +1,6 @@
 # ISSUES.md — Backlog de ASOTRACMET
 
-**Próximo ID: TASK-0044** · Reglas de este archivo: RULE-002 a RULE-007 en [AGENTS.md](AGENTS.md).
+**Próximo ID: TASK-0061** · Reglas de este archivo: RULE-002 a RULE-007 en [AGENTS.md](AGENTS.md).
 
 Estados: `pendiente` · `en_progreso` · `bloqueada` · `hecha` · `descartada`.
 Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable), 2 (viaje y plata),
@@ -53,6 +53,23 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 | TASK-0035 | Staging anonimizado y simulacro de restore                    | 2    | media     | hecha         |
 | TASK-0036 | Habeas data: extracto de TR por asociado                      | 2    | baja      | hecha         |
 | TASK-0037 | Bug: cliente web enviaba `content-type: json` sin cuerpo      | 1    | alta      | hecha       |
+| TASK-0044 | Sistema de diseño "Llano Abierto": tokens, base, tipografía, marca | 1 | crítica | en_progreso |
+| TASK-0045 | Primitivos `ui/*` (Icono, Boton, Chip, Placa, TablaDensa, …)  | 1    | crítica   | en_progreso |
+| TASK-0046 | Dialogo, DialogoMotivo, HojaInferior, Drawer y Avisador        | 1    | alta      | en_progreso |
+| TASK-0047 | AppShell: navegación única por rol, lazy routes, refresco, reloj | 1 | alta     | pendiente   |
+| TASK-0048 | Sala de turnos v2 (paneles, requerimientos, cola, actividad)  | 1    | crítica   | pendiente   |
+| TASK-0049 | Mi turno v2 móvil (oferta, posición hero, semáforo, TR)       | 1    | crítica   | pendiente   |
+| TASK-0050 | HSEQ, Finanzas, Tablero, Avisos, Login y Entrar sobre el sistema | 1-3 | media   | pendiente   |
+| TASK-0051 | Administración, Usuarios, Parámetros y Auditoría sobre el sistema | 1 | media   | pendiente   |
+| TASK-0052 | Accesibilidad, rendimiento y regresión visual en CI           | 1    | alta      | pendiente   |
+| TASK-0053 | Acta de turno: motor explicable, `esperado`/firma, saltos     | 1    | crítica   | pendiente   |
+| TASK-0054 | Acta de turno: API `/siguiente`, `/acta`, `/me/saltos`, tablero | 1  | crítica   | pendiente   |
+| TASK-0055 | Acta de turno: PanelSiguiente, ActaTurno, mis saltos, Saltadas | 1   | alta      | pendiente   |
+| TASK-0056 | Acta del mes imprimible para la asamblea                      | 2    | media     | pendiente   |
+| TASK-0057 | Alertas proactivas: `cola.proximo`, `documento.bloquea_turno`, `cola.sin_elegibles` | 1-3 | alta | pendiente |
+| TASK-0058 | Reloj de servidor y CuentaRegresiva sincronizada              | 1    | alta      | pendiente   |
+| TASK-0059 | Catálogo de motivos de bloqueo HSEQ                           | 3    | media     | pendiente   |
+| TASK-0060 | Tiempo real opcional por SSE con polling de respaldo          | 2    | media     | pendiente   |
 
 ## Tareas
 
@@ -610,6 +627,229 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
   - [x] Sin contraseñas de terceros (spec §12)
 - **Referencias:** spec §22.4; ARCHITECTURE §6.6; TASK-0011
 - **Evidencia:** `pnpm db:seed` → "Semilla aplicada: 10 asociados, 17 vehículos, 8 usuarios, 2 requerimientos"; los tests de `api-postgres.test.ts` la reaplican antes de cada caso sin duplicados (2026-09-16). CI la ejecuta en el job `db`.
+
+### TASK-0044 — Sistema de diseño "Llano Abierto": tokens, base, tipografía y marca
+
+- **Estado:** en_progreso
+- **Fase:** 1
+- **Prioridad:** crítica
+- **Contexto:** El propietario califica la web de "demasiado básica y plana". Un panel de cinco propuestas juzgadas (2026-09-17) eligió la identidad "Llano Abierto": verde profundo del morichal como familia tonal (continuidad con `#0f3d3e`), ocre de amanecer como acento (que además es el ámbar obligatorio de §9.3), papel cálido en vez de gris de dashboard, placas y códigos como objetos tipográficos (`.codigo`, tabular). El color solo significa estado (ámbar oferta abierta, verde TR asignado, rojo cancelado/declinado/intervención, gris no habilitado); la cabeza elegible se marca con marca, no con verde. Modo claro y oscuro con contraste AA verificado por test; una sola fuente variable autohospedada (Inter, latín) precacheada por Workbox, nunca Google Fonts; marca propia en SVG (`componentes/Marca.tsx`) reutilizada en favicon e iconos PWA. Densidades `operacion` (14 px) y `bolsillo` (16 px). Arquitectura CSS: `estilos/tokens.css`, `base.css`, `componentes.css`, `pantallas/*.css`; CSS moderno (nesting, container queries, `color-mix`), cero librerías CSS.
+- **Criterio de done:**
+  - [ ] `tokens.css` con la tabla de tokens claro/oscuro (fondo, superficie, texto, marca 50-900, acción, ámbar/verde/rojo/gris/info con texto/fondo/borde/sólido, foco, espaciado 4 px, radios, sombras, movimiento, capas) y `base.css` (reset, `color-scheme`, `:focus-visible`, `tabular-nums`, reduced-motion)
+  - [ ] Test unitario de contraste WCAG: todo par texto/fondo de tokens ≥ 4,5:1 en ambos modos (corrige `.badge.ambar` 3,4:1 y `.badge.gris` 4,2:1 actuales)
+  - [ ] Inter variable en `apps/web/public/fonts` (o paquete npm autohospedado), `font-display: swap`, preload, precacheada
+  - [ ] `Marca.tsx` e iconos PWA 192/512 regenerados del mismo símbolo; `theme-color` doble en `index.html`
+  - [ ] `pnpm test:e2e` en verde sin tocar marcado; capturas claro/oscuro de `/ops` y `/me` en `docs/ui/`
+- **Referencias:** spec §9.1, §9.3; ARCHITECTURE §7; TASK-0045..0052
+- **Evidencia:** _(pendiente)_
+
+### TASK-0045 — Primitivos `ui/*`
+
+- **Estado:** en_progreso
+- **Fase:** 1
+- **Prioridad:** crítica
+- **Contexto:** Hoy cada página compone HTML crudo con clases globales; los estados llegan como enum crudo (`Ops.tsx:237`, `Me.tsx:155`), el badge de Avisos no tiene tono (`Notificaciones.tsx:90`), la elegibilidad usa `title=` inaccesible (`Ops.tsx:181`) y la fila seleccionada de Finanzas usa una clase que no existe (`Finance.tsx:185`). Componentes reutilizables en `apps/web/src/componentes/ui/`: `Icono` (mapa cerrado de paths SVG propios), `Marca`, `Boton` (variantes, tamaños, `cargando`), `Chip`, `ChipElegibilidad` (Tooltip en vez de `title`), `Placa`, `CodigoTr` (copiable con confirmación), `Tarjeta`, `Campo`, `Pestanas` (tablist con teclado), `TablaDensa` (cabecera sticky, scroll interno, fila seleccionada, esqueleto, vacío, tarjetas bajo 560 px), `Tooltip`, `Esqueleto`, `EstadoVacio`, `EstadoError`, `Avatar`, `TileMetrica`, `SelectorTema`. Todos aceptan `data-testid` y lo pasan al control interno.
+- **Criterio de done:**
+  - [ ] Cada componente con test de Testing Library (roles ARIA, teclado en `Pestanas`, copiar en `CodigoTr`, `Tooltip` por foco y Esc)
+  - [ ] Ruta `/dev/ui` solo en `import.meta.env.DEV` con todos los estados
+  - [ ] Ningún enum crudo en pantalla: `Chip` siempre con `textoEstado*`
+  - [ ] `pnpm check` y `pnpm test:e2e` en verde
+- **Referencias:** spec §9.3; ARCHITECTURE §7; TASK-0044
+- **Evidencia:** _(pendiente)_
+
+### TASK-0046 — Dialogo, DialogoMotivo, DialogoConfirmar, HojaInferior, Drawer y Avisador
+
+- **Estado:** en_progreso
+- **Fase:** 1
+- **Prioridad:** alta
+- **Contexto:** Los motivos y confirmaciones van por `window.prompt` / `window.confirm` (`Ops.tsx:222`, `Hseq.tsx:495`, `Usuarios.tsx:217`, `Admin.tsx:104`, `Parametros.tsx:188`): no accesibles, no estilizables, no testeables sin `page.once('dialog')`. `Dialogo` sobre `<dialog>` nativo con foco atrapado y Esc; presets `DialogoMotivo` (textarea ≥ 3 caracteres, contador, `data-testid="dialogo-motivo"`) y `DialogoConfirmar` (`dialogo-confirmar` / `dialogo-cancelar`); `HojaInferior` anclada abajo en móvil; `Drawer` lateral de 420 px; `Avisador` + `useAvisar()` (región `aria-live`, cola máx. 3, autocierre). Los mensajes con `data-testid` (`hseq-mensaje`, `finance-mensaje`, `usuarios-mensaje`, `admin-mensaje`, `param-mensaje`, `pref-mensaje`, `error-ops`, `error-me`) se mantienen inline además del toast.
+- **Criterio de done:**
+  - [ ] `grep -r "window.prompt\|window.confirm" apps/web/src` vacío
+  - [ ] En el mismo commit, `e2e/enturnamiento.spec.ts` l. 255 y 381 pasan de `page.once('dialog')` a clic en `dialogo-confirmar`
+  - [ ] Tests de `DialogoMotivo` (mínimo 3 caracteres, Esc cancela) y de `Avisador`
+  - [ ] `pnpm test:e2e` en verde
+- **Referencias:** spec §9.3; TASK-0044, TASK-0045
+- **Evidencia:** _(pendiente)_
+
+### TASK-0047 — AppShell: navegación única por rol, rutas lazy, refresco y reloj
+
+- **Estado:** pendiente
+- **Fase:** 1
+- **Prioridad:** alta
+- **Contexto:** `Layout.tsx` pinta hasta 10 enlaces planos en la cabecera y el rol crudo (`Layout.tsx:120`); `App.tsx` importa las 12 páginas en el bundle del asociado. `AppShell` monta UNA sola navegación según `useMediaQuery('(min-width: 768px)')` (nunca sidebar y barra inferior ocultas por CSS a la vez: duplicaría `nav-*` y rompe el modo estricto de Playwright): `BarraLateral` de 240 px (grupos Operación / Flota / Recaudo / Gobierno, colapsable a raíl de 64 px), `BarraInferior` de 56 px en móvil y siempre para `member`, `PaginaCabecera` sticky con `IndicadorActualizacion` (`estado-actualizacion`: verde/ámbar/rojo + banda `sin-conexion`), `MenuUsuario` con `textoRol`, enlace "Saltar al contenido", `document.title` por pantalla. `React.lazy` + `Suspense` por ruta. `useRefresco(baseMs)` pausa el polling con la pestaña oculta. `useReloj()` con desfase del servidor (cabecera `date`) para las cuentas regresivas.
+- **Criterio de done:**
+  - [ ] `nav-*`, `usuario-actual`, `logout`, `sin-conexion` y el texto exacto `Avisos` / `Avisos (n)` conservados; e2e en verde a 1280×720
+  - [ ] E2E nuevo a 390×844: member entra y navega por la barra inferior
+  - [ ] `vite build` muestra que el chunk de `/me` no incluye Finance/Hseq/Admin
+  - [ ] Tests de `useRefresco` (pestaña oculta → `false`) y `useReloj` (desfase)
+- **Referencias:** spec §9.1; ARCHITECTURE §7; TASK-0045
+- **Evidencia:** _(pendiente)_
+
+### TASK-0048 — Sala de turnos v2
+
+- **Estado:** pendiente
+- **Fase:** 1
+- **Prioridad:** crítica
+- **Contexto:** Pantalla principal del producto (spec §9.2). Rejilla `320px minmax(0,1fr) 340px` con scroll interno por panel (la sala nunca desplaza la página); < 1000 px pestañas Requerimientos | Cola | Actividad. Requerimientos: botón "Nuevo requerimiento" (`POST /requerimientos` existe y hoy no tiene UI), `TarjetaRequerimiento` con `BarraCupos` y botón `ofrecer-<id>` en un solo clic. Cola: `Pestanas` con contador de elegibles, `cola-cliente` con etiqueta visible, búsqueda por placa/asociado y "solo elegibles" (filtro en cliente sin tocar el orden), `TablaDensa` con `Placa` + nombre completo (§9.3), cabeza con marca y `data-cabeza`, `ChipElegibilidad`, acción "Ver ficha" en `Drawer` (`GET /vehiculos/:id/ficha`), filas que cambian resaltadas; tira de intervenciones siempre visible (§21). Actividad: `LineaTiempo` con `CuentaRegresiva`, `CodigoTr` copiable, "Anular" con `DialogoMotivo`, "Cancelar TR" / "No tramitar" (rutas existentes sin UI); `GET /trs` acotado (`desde`, `limite`). Refresco adaptativo: 4 s con ofertas abiertas, 8 s en reposo.
+- **Criterio de done:**
+  - [ ] Todos los `data-testid` y textos de la sala intactos (el primer `td` de `cola-fila-*` sigue siendo solo la posición); los 16 e2e en verde
+  - [ ] E2E nuevo: ops crea un requerimiento MM desde la web, ofrece, cancela el TR con motivo y ve la reoferta
+  - [ ] Semilla de 60 placas (script en `scripts/`) sin scroll de página a 1366×768
+  - [ ] axe sin violaciones serias en `/ops`
+- **Referencias:** spec §9.2 Ops, §9.3, §21; ARCHITECTURE §7; TASK-0045, TASK-0046, TASK-0047
+- **Evidencia:** _(pendiente)_
+
+### TASK-0049 — Mi turno v2 móvil
+
+- **Estado:** pendiente
+- **Fase:** 1
+- **Prioridad:** crítica
+- **Contexto:** El asociado usa un celular de gama media con datos móviles (spec §9.1 PWA). Densidad `bolsillo`, 360 px primero. Orden: `OfertaCard` (Tarjeta ámbar a sangre con `CuentaRegresiva` de 64 px, "Te tocó porque: …" cuando exista el acta, botón `aceptar-oferta` ancho completo, bloque de declinación siempre visible con `motivo-declinacion` y `nota-declinacion` — el e2e selecciona sin abrir nada —, botones deshabilitados sin red), posición por placa (número `--t-display`, `MedidorPosicion`, `ChipElegibilidad` propia con enlace a Mis documentos, "Eres el siguiente"; `mi-posicion` conserva literalmente `Tu posición: N de M en CLASE · PLACA`), Mis documentos como `Semaforo`, Mis TR con `CodigoTr`, Tus datos. Al llegar una oferta: `navigator.vibrate`, `document.title`, toast. Polling 15 s con pausa por visibilidad.
+- **Criterio de done:**
+  - [ ] E2E de member y de PWA offline en verde; `mi-posicion` con el texto literal
+  - [ ] Viewport 360×640 sin scroll horizontal; objetivos táctiles ≥ 44 px (Aceptar/Declinar 52 px)
+  - [ ] Chunk de `/me` + shell ≤ 120 KB gzip (límite en el build)
+  - [ ] Lighthouse móvil: rendimiento ≥ 90, accesibilidad ≥ 95
+- **Referencias:** spec §9.1, §9.2 Member, §9.3; TASK-0045, TASK-0046, TASK-0047, TASK-0058
+- **Evidencia:** _(pendiente)_
+
+### TASK-0050 — HSEQ, Finanzas, Tablero, Avisos, Login y Entrar sobre el sistema
+
+- **Estado:** pendiente
+- **Fase:** 1-3
+- **Prioridad:** media
+- **Contexto:** Migrar las pantallas secundarias al sistema de diseño. HSEQ: maestro-detalle con `TablaDensa` + `Semaforo`, ficha con `Pestanas` Documentos / Habilitaciones (interruptores con `DialogoMotivo`) / Conductores, zona de arrastre para soportes, renovación por fecha con `DialogoConfirmar`. Finanzas: TR sin viaje como tarjetas, tabla con fila seleccionada visible y `button` en celda (no `tr onClick`), ficha en `Drawer`, resumen con `TileMetrica`, polling 30 s. Tablero: `TileMetrica`, `BarraEquidad` en la celda "Tomó" (texto `100 %` intacto), esqueleto al cargar (hoy no pinta nada). Avisos: agrupados por día, `Chip` por evento, "Marcar todas", fecha con `formatearFechaHora` (elimina el duplicado sin `timeZone` de `Notificaciones.tsx:10-18`). Login/Entrar: pantalla dividida con `Marca`, ilustración SVG y lema "La cola es de todos"; modo oscuro.
+- **Criterio de done:**
+  - [ ] `hseq-*`, `ficha-*`, `doc-*`, `hab-*`, `finance-*`, `tablero-*` (nth 1/2/5 intactos), `aviso-*`, `pref-*`, `login-*`, `entrar-*` conservados; e2e en verde
+  - [ ] Capturas claro/oscuro en `docs/ui/`
+- **Referencias:** spec §9.2; TASK-0044..0047
+- **Evidencia:** _(pendiente)_
+
+### TASK-0051 — Administración, Usuarios, Parámetros y Auditoría sobre el sistema
+
+- **Estado:** pendiente
+- **Fase:** 1
+- **Prioridad:** media
+- **Contexto:** Administración: override como "Mover <placa> antes de <placa>" con vista previa del orden leída de la API (se elimina la lista numérica "Nueva posición", que parece editar `posicion`, §9.3) y reset en pasos numerados con `DialogoConfirmar`. Usuarios: `Campo`, chips de placas elegidas sobre el `<select multiple>` (el e2e hace `selectOption`), cambio de rol con `DialogoConfirmar`. Parámetros: tarjetas por grupo (Cola, Ofertas, Recaudo, Avisos), etiquetas legibles de políticas, diff en `DialogoConfirmar`. Auditoría: filtros como `Campo`, acción y actor traducidos (`textoAccionAudit`), antes/después como chips, JSON con scroll.
+- **Criterio de done:**
+  - [ ] `admin-*`, `override-*`, `reset-*`, `usuario-*`, `param-*`, `audit-*` conservados; textos `120 → 90` y `Reset de cola` intactos; e2e en verde
+  - [ ] Ningún control numérico de posición en `/admin`
+- **Referencias:** spec §9.2 Superadmin, §9.3; TASK-0044..0047
+- **Evidencia:** _(pendiente)_
+
+### TASK-0052 — Accesibilidad, rendimiento y regresión visual en CI
+
+- **Estado:** pendiente
+- **Fase:** 1
+- **Prioridad:** alta
+- **Contexto:** Que el rediseño no se degrade: `@axe-core/playwright` sobre `/login`, `/ops`, `/me`, `/hseq`, `/finance`, `/tablero`, `/notificaciones`, `/admin` en claro y oscuro; test de teclado en la sala (tablist, Tooltip, Dialogo); test de contraste de tokens dentro de `pnpm check`; límite de tamaño por chunk que rompe el build; Lighthouse CI móvil para `/me` y `/ops`; `toHaveScreenshot` a 390×844 y 1280×720 con máscaras sobre relojes y umbral 0,2 % en el job `e2e`.
+- **Criterio de done:**
+  - [ ] axe sin violaciones serias/críticas en las ocho rutas y dos modos
+  - [ ] Lighthouse móvil `/me` y `/ops`: rendimiento ≥ 90, accesibilidad ≥ 95, en CI
+  - [ ] Capturas de referencia versionadas y comparadas en CI
+- **Referencias:** AGENTS RULE-017, RULE-018; ARCHITECTURE §10; TASK-0044..0051
+- **Evidencia:** _(pendiente)_
+
+### TASK-0053 — Acta de turno: motor explicable, `esperado` + firma y saltos persistidos
+
+- **Estado:** pendiente
+- **Fase:** 1
+- **Prioridad:** crítica
+- **Contexto:** Innovación elegida por el panel (2026-09-17): quién sigue, por qué y a quién se saltó, antes y después de ofrecer. Hoy `siguienteElegible` (`motor-cola.ts:647-697`) calcula `descartes[placa] = motivo` y los tira salvo en `COLA_VACIA`; `oferta.crear` audita la oferta a secas. Dominio: `evaluarCola(posiciones, ctx) → { candidato, descartes, penalizadas }` pura en `elegibilidad.ts`; `siguienteElegible` devuelve `{ candidato, descartes }`; `previsualizarOferta(requerimientoId, actor)` de solo lectura (sin lock); `firmaCola` (FNV-1a pura sobre `vehiculoId:ciclo:saltosPendientes:turnosOfrecidos` + ofertas abiertas); `ofrecer` acepta `esperado: { vehiculoId, firma }` y, si la cola cambió, lanza `CANDIDATO_CAMBIO` (409) **antes** de `consumirSaltos` y sin auditar; `crearOferta` persiste los descartes con `tx.guardarSaltos` en la misma transacción; `oferta.crear.after` incluye `claseCola`, `clienteId`, `posicionElegida`, `descartes`, `firma` y `parametrosAplicados`. Puertos: `Transaccion.guardarSaltos`, `Consultas.saltosDeOferta`, `saltosDeVehiculos`, `saltosPorClase`. Migración `0017_oferta_saltos.sql` (append-only, unique `(oferta_id, vehiculo_id)`, índices por vehículo y oferta, trigger inmutable, RLS: member solo sus placas). El frontend sigue sin decidir (RULE-010): afirma lo que vio y el motor verifica.
+- **Criterio de done:**
+  - [ ] Tests de dominio: `evaluarCola` devuelve descartes en orden con motivo y detalle; con la semilla SPS413 sale saltada por `VEHICULO_NO_HABILITADO` y FST189 elegida; `esperado` equivocado → `CANDIDATO_CAMBIO` sin oferta, sin saltos consumidos y sin audit; `COLA_VACIA` conserva descartes; la oferta crea N saltos; `firmaCola` cambia con el orden, una oferta abierta o un salto pendiente
+  - [ ] Adaptadores memoria y Postgres; `pnpm test:db` en verde (RLS y append-only de `oferta_saltos`)
+  - [ ] `CANDIDATO_CAMBIO` en `codigos-error.ts`; ARCHITECTURE §5.5 y §8 actualizados
+- **Referencias:** spec §7.2, §7.3, §7.7, §21; AGENTS RULE-010, RULE-011, RULE-014, RULE-016; TASK-0054, TASK-0055
+- **Evidencia:** _(pendiente)_
+
+### TASK-0054 — Acta de turno: API y contrato
+
+- **Estado:** pendiente
+- **Fase:** 1
+- **Prioridad:** crítica
+- **Contexto:** `GET /requerimientos/:id/siguiente` (`ofertas R`, no member; caché de 1,5 s por clase+cliente) → `VistaSiguiente { candidato, descartes, firma, cuposDisponibles, calculadoEn }`; `POST /requerimientos/:id/ofertas` acepta `OfrecerSchema { esperado? }`; `GET /ofertas/:id/acta` (member solo si es suya o está en los saltos, con los saltos ajenos reducidos a conteo; viewer con etiqueta enmascarada); `GET /me/saltos?desde&hasta` (own, bajo la caché NetworkFirst `/me/*`); `GET /colas/:clase/saltos?mes`; `tablero/calcular.ts` con `saltadas` y `saltadasPorMotivo`; migración `0018_metricas_saltos.sql`. Vistas Zod en `packages/shared/src/vistas.ts`; contrato OpenAPI regenerado.
+- **Criterio de done:**
+  - [ ] Tests de API: viewer lee el acta enmascarada; member solo sus saltos + agregado; hseq no lee `/siguiente`; 20 `POST …/ofertas` paralelos con la misma firma → una gana y el resto `CANDIDATO_CAMBIO` o `COLA_LOCKED`
+  - [ ] `openapi.test.ts` en verde y `docs/openapi.json` al día
+  - [ ] Mismas vistas en memoria y Postgres (`api-postgres.test.ts`)
+- **Referencias:** spec §8.4, §8.5, §3.2; ARCHITECTURE §6.4, §6.7; TASK-0053
+- **Evidencia:** _(pendiente)_
+
+### TASK-0055 — Acta de turno: web
+
+- **Estado:** pendiente
+- **Fase:** 1
+- **Prioridad:** alta
+- **Contexto:** `PanelSiguiente` en cada requerimiento ("Saldrá FST189 · ASOCIADO 02 · se salta SPS413: no habilitada para HLB"; estados esqueleto / "Nadie elegible: …" / sin cupos); `ofrecer-<id>` envía `esperado` desde el panel ya cargado (si aún no cargó, ofrece sin `esperado`); ante `CANDIDATO_CAMBIO` invalida `cola` y `siguiente`, resalta la nueva cabeza y avisa ("La cola cambió: ahora sigue TKM221"); el cliente no reintenta ese 409 (test). `ActaTurno` en `Drawer` desde `oferta-abierta`, `tr-item`, `aviso-oferta.abierta` y Tablero. Mi turno: sección `mis-saltos` con `textoSalto` en lenguaje llano y enlace a Mis documentos si el motivo es documental; `/me/historial` como `LineaTiempo`. Tablero: columna "Saltadas" como 10.ª celda (nth 1/2/5 intactos) y barras por motivo.
+- **Criterio de done:**
+  - [ ] E2E nuevo: superadmin crea por API un member para `a-01` con `veh-SPS413`; ops ve "Saldrá FST189" y "SPS413" antes de ofrecer, ofrece y lee el acta; el member ve en `mis-saltos` "No habilitada para HLB"; los e2e existentes intactos
+  - [ ] Tests de `PanelSiguiente`, `textoSalto` y no-reintento de `CANDIDATO_CAMBIO`
+- **Referencias:** spec §9.2, §9.3, §21; TASK-0048, TASK-0049, TASK-0054
+- **Evidencia:** _(pendiente)_
+
+### TASK-0056 — Acta del mes imprimible para la asamblea
+
+- **Estado:** pendiente
+- **Fase:** 2
+- **Prioridad:** media
+- **Contexto:** `GET /colas/:clase/acta-mes?mes` (`cola R`, JSON) y `GET /export/acta-mes.html?clase&mes` (`export A`, HTML imprimible con la misma marca de agua que el CSV, auditado `export.acta_mes`): equidad con "saltada por motivo", intervenciones con motivo y TR del mes. `ActaMes.tsx` en `/libro/:clase/acta` con `@media print`, botones Imprimir y Descargar; botón "Acta del mes" en Tablero. Sin cadena de hashes ni compartir por WhatsApp (§21).
+- **Criterio de done:**
+  - [ ] Test de API: export auditado; viewer con PII enmascarada
+  - [ ] E2E: el veedor abre el acta del mes y ve "Saltadas"
+  - [ ] Captura de impresión en `docs/ui/`
+- **Referencias:** spec §9.2 Viewer, §21; TASK-0034, TASK-0054, TASK-0055
+- **Evidencia:** _(pendiente)_
+
+### TASK-0057 — Alertas proactivas por outbox
+
+- **Estado:** pendiente
+- **Fase:** 1-3
+- **Prioridad:** alta
+- **Contexto:** Tres avisos nuevos sobre la outbox y el job de avisos existentes (`notificaciones/avisos.ts`, claves idempotentes): `cola.proximo:{vehiculoId}:{ciclo}` cuando una placa entra en las primeras N posiciones elegibles ("Estás de 2.º: alista el vehículo"; parámetro `aviso_proximo_turno_posiciones`, default 2, con Zod y test); `documento.bloquea_turno:{vehiculoId}:{documentoId}:{ciclo}` al asociado y a admin_hseq cuando una placa en posición ≤ 3 tiene un documento bloqueante vencido; `cola.sin_elegibles:{requerimientoId}:{fecha}` a admin_ops y admin_hseq cuando un requerimiento con cupo no tiene candidato. Plantillas sin PII más allá de la placa; la de `oferta.abierta` añade "Te tocó porque: …". Check de `notificaciones_outbox.evento` ampliado; `param-aviso_proximo_turno_posiciones` en Parámetros.
+- **Criterio de done:**
+  - [ ] Tests en `notificaciones.test.ts`: top-2 recibe `cola.proximo` una vez por ciclo; SOAT vencido en posición 3 avisa a asociado y HSEQ; requerimiento con cupo y sin elegibles avisa a ops y HSEQ
+  - [ ] `pnpm test:db` con el check ampliado
+  - [ ] Parámetro nuevo auditado en `PATCH /parametros` y editable desde la web
+- **Referencias:** spec §10, §11, §14; AGENTS RULE-012; TASK-0026, TASK-0028
+- **Evidencia:** _(pendiente)_
+
+### TASK-0058 — Reloj de servidor y CuentaRegresiva sincronizada
+
+- **Estado:** pendiente
+- **Fase:** 1
+- **Prioridad:** alta
+- **Contexto:** "A mí me marcaba que aún tenía tiempo": la cuenta regresiva de la oferta debe ser la misma en la sala y en el celular. `useReloj()` (un solo `setInterval`) calcula el desfase con la cabecera `date` de las respuestas de `api()` (mismo origen, sin peticiones nuevas) y avisa si supera 5 min. `CuentaRegresiva` (anillo SVG + mm:ss, verde > 15 min, ámbar ≤ 15, rojo ≤ 5, `role=timer`, anuncios `aria-live` en 15/5/1, "Expirada") en la sala y en `OfertaCard`.
+- **Criterio de done:**
+  - [ ] Test con reloj falso: desfase +90 s, cambio de tono 15/5, anuncio `aria-live`, "Expirada"
+  - [ ] Sin peticiones adicionales a la API
+- **Referencias:** spec §9.2 Member, §9.3; TASK-0047, TASK-0049
+- **Evidencia:** _(pendiente)_
+
+### TASK-0059 — Catálogo de motivos de bloqueo HSEQ
+
+- **Estado:** pendiente
+- **Fase:** 3
+- **Prioridad:** media
+- **Contexto:** `motivoBloqueo` de las habilitaciones es texto libre; en el acta de turno el `detalle` de un salto podría arrastrar datos sensibles (p. ej. tipos de documento médico). Catálogo de motivos de bloqueo (tabla o parámetro) con `hab-*` como select + nota; el `detalle` del acta nunca contiene datos clínicos.
+- **Criterio de done:**
+  - [ ] Catálogo con Zod, seed y migración; `PUT /vehiculos/:id/habilitaciones/:clienteId` exige motivo del catálogo
+  - [ ] Test: el `detalle` del salto no incluye tipos de documento médicos
+- **Referencias:** spec §6.3, §12; TASK-0023, TASK-0053
+- **Evidencia:** _(pendiente)_
+
+### TASK-0060 — Tiempo real opcional por SSE con polling de respaldo
+
+- **Estado:** pendiente
+- **Fase:** 2
+- **Prioridad:** media
+- **Contexto:** Solo tras TASK-0044..0058. `GET /api/v1/eventos` por SSE (LISTEN/NOTIFY sin PII, replay por `Last-Event-ID`, filtro por rol y placas), la web invalida las consultas afectadas y el `IndicadorActualizacion` pasa a "En vivo"; si el stream cae, vuelve al polling. Requiere enriquecer `oferta.crear.after` con `claseCola` (lo hace TASK-0053) y extender `openapi/documento.ts` para rutas de stream.
+- **Criterio de done:**
+  - [ ] Test de API: member no recibe eventos ajenos
+  - [ ] E2E existente en verde con polling a 60 s (configuración de test gateada como RULE-023)
+  - [ ] Runbook en ARCHITECTURE §14; nada empeora si el stream cae
+- **Referencias:** spec §5.1, §15; ARCHITECTURE §12; TASK-0053
+- **Evidencia:** _(pendiente)_
 
 ## Plantilla
 
