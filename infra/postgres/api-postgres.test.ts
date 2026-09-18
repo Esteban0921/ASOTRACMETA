@@ -10,11 +10,12 @@ import { PASSWORD_DEV, secretoTotpSemilla } from '@asotracmet/api/seed';
 import { sembrarPostgres, uuidSemilla } from '@asotracmet/api/seed-postgres';
 import { codigoTotp } from '@asotracmet/api/totp';
 import { migrar } from './migrar.js';
+import { urlBasePruebas } from './base-pruebas.js';
 
 // La API completa contra Postgres real (TASK-0019): mismos criterios de aceptación de la spec §20
 // que ya cumple el almacén en memoria, ahora con transacciones, locks, RLS y sesiones de verdad.
 
-const url = process.env.DATABASE_URL;
+const url = urlBasePruebas();
 const AHORA = '2026-09-16T13:00:00Z';
 const REQ_HLB = uuidSemilla('req-hlb-castilla');
 const CLAVE = claveDesdeEntorno(process.env);

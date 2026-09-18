@@ -17,7 +17,7 @@ pnpm install                 # Node >= 24, pnpm 9 (corepack enable)
 pnpm dev                     # API en :3001 (almacén en memoria + seed) y web en :5173
 pnpm check                   # lint + formato + tipos + tests unitarios (obligatorio antes de cerrar una tarea)
 pnpm test:e2e                # Playwright: levanta API en modo e2e y la web
-pnpm test:db                 # migraciones + RLS contra DATABASE_URL (se omite si no está definida)
+pnpm test:db                 # migraciones + RLS contra DATABASE_URL_TEST (o DATABASE_URL): solo bases `*_test`, trunca tablas
 pnpm test:redis              # lock distribuido cola:{clase} contra REDIS_URL (se omite si no está definida)
 pnpm build:contrato          # regenera docs/openapi.json (CI falla si no está al día)
 ```

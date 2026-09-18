@@ -580,7 +580,7 @@ sobre Postgres se validan con `pnpm test:db` (CI job `db`).
 | e2e                     | `e2e/*.spec.ts`                    | login ops (contraseña + TOTP) → ofrecer → login member (enlace) → aceptar → aparece TR; declinar con motivo → pasa a la siguiente placa; viewer sin botones y 403 en API; credenciales inválidas; código TOTP incorrecto y correcto; administrador sin segundo factor lo configura en el primer acceso; el enlace del asociado es de un solo uso; superadmin resetea la cola con motivo, confirmación y segundo factor y el veedor ve la intervención; superadmin da de alta un asociado con placa que entra con su enlace |
 
 Comandos: `pnpm test` (unit/integración), `pnpm test:coverage`, `pnpm test:e2e`, `pnpm test:db`, `pnpm test:redis`; `pnpm build:contrato` regenera `docs/openapi.json`.
-`pnpm check` = lint + formato + tipos + unit. CI (`.github/workflows/ci.yml`): job `check`, job `e2e`
+`pnpm check` = lint + formato + tipos + unit. `pnpm test:db` solo corre contra una base cuyo nombre termine en `_test` (`DATABASE_URL_TEST` o `DATABASE_URL`; guardia `infra/postgres/base-pruebas.ts`, TASK-0061): trunca tablas de operación y las vuelve a sembrar. CI (`.github/workflows/ci.yml`): job `check`, job `e2e`
 (Chromium; el test de PWA usa un tercer servidor `vite preview` con el build real) y job `db` (servicios Postgres 16 y Redis 7 → `db:migrate` + `db:seed` + `test:db` + `test:redis`).
 
 Los e2e usan puertos propios (API `3101`, web `5273`) para convivir con `pnpm dev` sin reutilizar por

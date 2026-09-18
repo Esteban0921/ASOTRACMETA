@@ -1,6 +1,6 @@
 # ISSUES.md — Backlog de ASOTRACMET
 
-**Próximo ID: TASK-0061** · Reglas de este archivo: RULE-002 a RULE-007 en [AGENTS.md](AGENTS.md).
+**Próximo ID: TASK-0062** · Reglas de este archivo: RULE-002 a RULE-007 en [AGENTS.md](AGENTS.md).
 
 Estados: `pendiente` · `en_progreso` · `bloqueada` · `hecha` · `descartada`.
 Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable), 2 (viaje y plata),
@@ -62,14 +62,15 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 | TASK-0050 | HSEQ, Finanzas, Tablero, Avisos, Login y Entrar sobre el sistema | 1-3 | media   | pendiente   |
 | TASK-0051 | Administración, Usuarios, Parámetros y Auditoría sobre el sistema | 1 | media   | pendiente   |
 | TASK-0052 | Accesibilidad, rendimiento y regresión visual en CI           | 1    | alta      | pendiente   |
-| TASK-0053 | Acta de turno: motor explicable, `esperado`/firma, saltos     | 1    | crítica   | pendiente   |
+| TASK-0053 | Acta de turno: motor explicable, `esperado`/firma, saltos     | 1    | crítica   | en_progreso   |
 | TASK-0054 | Acta de turno: API `/siguiente`, `/acta`, `/me/saltos`, tablero | 1  | crítica   | pendiente   |
 | TASK-0055 | Acta de turno: PanelSiguiente, ActaTurno, mis saltos, Saltadas | 1   | alta      | pendiente   |
 | TASK-0056 | Acta del mes imprimible para la asamblea                      | 2    | media     | pendiente   |
-| TASK-0057 | Alertas proactivas: `cola.proximo`, `documento.bloquea_turno`, `cola.sin_elegibles` | 1-3 | alta | pendiente |
+| TASK-0057 | Alertas proactivas: `cola.proximo`, `documento.bloquea_turno`, `cola.sin_elegibles` | 1-3 | alta | en_progreso |
 | TASK-0058 | Reloj de servidor y CuentaRegresiva sincronizada              | 1    | alta      | pendiente   |
-| TASK-0059 | Catálogo de motivos de bloqueo HSEQ                           | 3    | media     | pendiente   |
+| TASK-0059 | Catálogo de motivos de bloqueo HSEQ                           | 3    | media     | en_progreso   |
 | TASK-0060 | Tiempo real opcional por SSE con polling de respaldo          | 2    | media     | pendiente   |
+| TASK-0061 | `pnpm test:db` solo contra una base de pruebas `*_test`      | 0    | alta      | hecha       |
 
 ## Tareas
 
@@ -752,7 +753,7 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 
 ### TASK-0053 — Acta de turno: motor explicable, `esperado` + firma y saltos persistidos
 
-- **Estado:** pendiente
+- **Estado:** en_progreso
 - **Fase:** 1
 - **Prioridad:** crítica
 - **Contexto:** Innovación elegida por el panel (2026-09-17): quién sigue, por qué y a quién se saltó, antes y después de ofrecer. Hoy `siguienteElegible` (`motor-cola.ts:647-697`) calcula `descartes[placa] = motivo` y los tira salvo en `COLA_VACIA`; `oferta.crear` audita la oferta a secas. Dominio: `evaluarCola(posiciones, ctx) → { candidato, descartes, penalizadas }` pura en `elegibilidad.ts`; `siguienteElegible` devuelve `{ candidato, descartes }`; `previsualizarOferta(requerimientoId, actor)` de solo lectura (sin lock); `firmaCola` (FNV-1a pura sobre `vehiculoId:ciclo:saltosPendientes:turnosOfrecidos` + ofertas abiertas); `ofrecer` acepta `esperado: { vehiculoId, firma }` y, si la cola cambió, lanza `CANDIDATO_CAMBIO` (409) **antes** de `consumirSaltos` y sin auditar; `crearOferta` persiste los descartes con `tx.guardarSaltos` en la misma transacción; `oferta.crear.after` incluye `claseCola`, `clienteId`, `posicionElegida`, `descartes`, `firma` y `parametrosAplicados`. Puertos: `Transaccion.guardarSaltos`, `Consultas.saltosDeOferta`, `saltosDeVehiculos`, `saltosPorClase`. Migración `0017_oferta_saltos.sql` (append-only, unique `(oferta_id, vehiculo_id)`, índices por vehículo y oferta, trigger inmutable, RLS: member solo sus placas). El frontend sigue sin decidir (RULE-010): afirma lo que vio y el motor verifica.
@@ -803,7 +804,7 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 
 ### TASK-0057 — Alertas proactivas por outbox
 
-- **Estado:** pendiente
+- **Estado:** en_progreso
 - **Fase:** 1-3
 - **Prioridad:** alta
 - **Contexto:** Tres avisos nuevos sobre la outbox y el job de avisos existentes (`notificaciones/avisos.ts`, claves idempotentes): `cola.proximo:{vehiculoId}:{ciclo}` cuando una placa entra en las primeras N posiciones elegibles ("Estás de 2.º: alista el vehículo"; parámetro `aviso_proximo_turno_posiciones`, default 2, con Zod y test); `documento.bloquea_turno:{vehiculoId}:{documentoId}:{ciclo}` al asociado y a admin_hseq cuando una placa en posición ≤ 3 tiene un documento bloqueante vencido; `cola.sin_elegibles:{requerimientoId}:{fecha}` a admin_ops y admin_hseq cuando un requerimiento con cupo no tiene candidato. Plantillas sin PII más allá de la placa; la de `oferta.abierta` añade "Te tocó porque: …". Check de `notificaciones_outbox.evento` ampliado; `param-aviso_proximo_turno_posiciones` en Parámetros.
@@ -828,7 +829,7 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 
 ### TASK-0059 — Catálogo de motivos de bloqueo HSEQ
 
-- **Estado:** pendiente
+- **Estado:** en_progreso
 - **Fase:** 3
 - **Prioridad:** media
 - **Contexto:** `motivoBloqueo` de las habilitaciones es texto libre; en el acta de turno el `detalle` de un salto podría arrastrar datos sensibles (p. ej. tipos de documento médico). Catálogo de motivos de bloqueo (tabla o parámetro) con `hab-*` como select + nota; el `detalle` del acta nunca contiene datos clínicos.
@@ -850,6 +851,19 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
   - [ ] Runbook en ARCHITECTURE §14; nada empeora si el stream cae
 - **Referencias:** spec §5.1, §15; ARCHITECTURE §12; TASK-0053
 - **Evidencia:** _(pendiente)_
+
+### TASK-0061 — `pnpm test:db` solo contra una base de pruebas `*_test`
+
+- **Estado:** hecha (2026-09-18)
+- **Fase:** 0
+- **Prioridad:** alta
+- **Contexto:** `infra/postgres/api-postgres.test.ts` trunca ofertas, TR, requerimientos, cola, viajes y recaudos (`truncate … cascade`) y vuelve a sembrar la semilla anonimizada. El 2026-09-18 una corrida con el `DATABASE_URL` del `.env` local (base `asotracmet`, con el Excel legado cargado en TASK-0025) borró 265 viajes, 265 TR, 257 recaudos y la cola del TURNERO. Se restauró con `pnpm db:migrate-xlsx` (carga repetible por UUID v5) tras un `pg_dump` de respaldo. Los tests deben rechazar cualquier base que no sea de pruebas (RULE-021: los datos reales no se pisan por descuido).
+- **Criterio de done:**
+  - [x] `infra/postgres/base-pruebas.ts`: `urlBasePruebas()` lee `DATABASE_URL_TEST` (precedencia) o `DATABASE_URL` y lanza si el nombre de la base no termina en `_test`; los tres tests del proyecto `db` la usan
+  - [x] Test unitario de la guardia que corre sin Postgres (`base-pruebas.test.ts`)
+  - [x] CI (`ci.yml`: `POSTGRES_DB` y `DATABASE_URL` → `asotracmet_test`), `.env.example` (`DATABASE_URL_TEST`) y el arranque rápido de AGENTS.md actualizados
+- **Referencias:** AGENTS RULE-018, RULE-021; ARCHITECTURE §10; TASK-0025, TASK-0039
+- **Evidencia (2026-09-18):** `DATABASE_URL_TEST=postgres://…/asotracmet_test pnpm exec vitest run --project db` → 4 archivos, 30 passed. Con `DATABASE_URL=postgres://…/asotracmet` (base de desarrollo) → falla en el arranque con «solo corre contra una base cuyo nombre termine en "_test"» y la base queda intacta (265 viajes, 52 posiciones). Restauración previa: `pnpm db:migrate-xlsx` → «Carga confirmada: 265 TR, 257 recaudos, 33 usuarios»; cabeza TM-CBZ = TGM586 (orden del TURNERO). `pnpm exec eslint infra/postgres` ✓.
 
 ## Plantilla
 

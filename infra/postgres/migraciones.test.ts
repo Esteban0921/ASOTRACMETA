@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
 import { listarMigraciones, migrar } from './migrar.js';
+import { urlBasePruebas } from './base-pruebas.js';
 
-const url = process.env.DATABASE_URL;
+const url = urlBasePruebas();
 
 // Se omite sin DATABASE_URL para que `pnpm test` pase en cualquier máquina; CI lo ejecuta contra Postgres 16.
 describe.skipIf(!url)('migraciones Postgres (spec §6, §16 RLS)', () => {

@@ -6,11 +6,12 @@ import { PASSWORD_DEV } from '@asotracmet/api/seed';
 import { sembrarPostgres } from '@asotracmet/api/seed-postgres';
 import { anonimizar } from './anonimizar.js';
 import { migrar } from './migrar.js';
+import { urlBasePruebas } from './base-pruebas.js';
 
 // Copia anonimizada para staging (TASK-0035, spec §15): sin PII, sin secretos, sin sesiones, y con
 // la operación intacta. Corre contra DATABASE_URL (la base de test), nunca contra producción.
 
-const url = process.env.DATABASE_URL;
+const url = urlBasePruebas();
 
 /** Base propia (`<base>_anonimizar`) para no pisar la que usan los otros tests del proyecto `db`. */
 async function crearBaseAparte(urlBase: string): Promise<string> {
