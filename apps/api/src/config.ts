@@ -49,6 +49,13 @@ export interface Config {
   soporteUrlSegundos: number;
   /** Si está definido, `/metrics` exige `authorization: Bearer <token>`. */
   metricsToken: string | null;
+  /**
+   * Tokens de servicio que acepta `POST /api/v1/gps/ubicaciones` (ADR-0007). El segundo
+   * (`GPS_INGESTA_TOKEN_ANTERIOR`) permite rotar sin cortar al agente. Vacío = ingesta apagada.
+   */
+  gpsIngestaTokens: string[];
+  /** Lotes por minuto y por IP que acepta la ingesta. */
+  gpsIngestaRateLimitMax: number;
   /** Base OTLP/HTTP del colector OpenTelemetry (`http://host:4318`); sin ella no se exporta nada. */
   otelEndpoint: string | null;
   otelServicio: string;
@@ -61,6 +68,20 @@ export interface Config {
   maxIntentosOtp: number;
   /** Retos TOTP vivos por usuario antes de responder `DEMASIADOS_INTENTOS` (TASK-0040). */
   maxRetosTotp: number;
+}
+
+/**
+ * Token conocido del agente GPS en los modos sin base real (desarrollo y e2e): así el circuito se
+ * puede probar sin configurar nada. Contra Postgres, sin variable la ingesta queda apagada.
+ */
+export const TOKEN_GPS_DESARROLLO = 'token-gps-de-desarrollo';
+
+function tokensIngestaGps(env: NodeJS.ProcessEnv, persistencia: 'memoria' | 'postgres'): string[] {
+  const configurados = [env.GPS_INGESTA_TOKEN, env.GPS_INGESTA_TOKEN_ANTERIOR].filter(
+    (token): token is string => typeof token === 'string' && token.trim() !== '',
+  );
+  if (configurados.length > 0) return configurados;
+  return persistencia === 'memoria' ? [TOKEN_GPS_DESARROLLO] : [];
 }
 
 export function cargarConfig(
@@ -105,6 +126,8 @@ export function cargarConfig(
     soporteMaxBytes: Number(env.SOPORTE_MAX_BYTES ?? SOPORTE_MAX_BYTES),
     soporteUrlSegundos: Number(env.SOPORTE_URL_SEGUNDOS ?? 300),
     metricsToken: env.METRICS_TOKEN ? env.METRICS_TOKEN : null,
+    gpsIngestaTokens: tokensIngestaGps(env, persistencia),
+    gpsIngestaRateLimitMax: Number(env.GPS_INGESTA_RATE_LIMIT_MAX ?? (modoE2e ? 10_000 : 120)),
     otelEndpoint: env.OTEL_EXPORTER_OTLP_ENDPOINT ? env.OTEL_EXPORTER_OTLP_ENDPOINT : null,
     otelServicio: env.OTEL_SERVICE_NAME ?? 'asotracmet-api',
     mensajeria: env.MENSAJERIA === 'memoria' || modoE2e ? 'memoria' : 'consola',

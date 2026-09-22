@@ -10,6 +10,10 @@ const BUCKETS_MS = [25, 50, 100, 250, 500, 1000, 2500, 5000] as const;
 export interface GaugesEnVivo {
   ofertasAbiertas: number;
   declinacionesHoy: number;
+  /** Segundos desde el último lote del agente GPS; `null` si nunca llegó uno (ADR-0007). */
+  gpsUltimoLoteSegundos?: number | null;
+  /** Placas activas sin señal: distingue "agente caído" de "camión sin reportar". */
+  gpsPlacasSinSenal?: number;
 }
 
 function claseHttp(status: number): string {
@@ -30,12 +34,16 @@ export class RegistroMetricas {
   private ofrecerErrores = 0;
   private declinaciones = 0;
   private lockRedisErrores = 0;
+  private gpsLotes = 0;
+  private readonly gpsUbicaciones = new Map<string, number>();
 
   private readonly otelHttp: Counter;
   private readonly otelErrores: Counter;
   private readonly otelOfrecer: Histogram;
   private readonly otelDeclinaciones: Counter;
   private readonly otelLockRedis: Counter;
+  private readonly otelGpsLotes: Counter;
+  private readonly otelGpsUbicaciones: Counter;
 
   constructor() {
     for (const b of BUCKETS_MS) this.latenciaOfrecer.buckets.set(b, 0);
@@ -46,6 +54,8 @@ export class RegistroMetricas {
     this.otelOfrecer = meter.createHistogram(`${PREFIJO}.ofrecer.latencia`, { unit: 'ms' });
     this.otelDeclinaciones = meter.createCounter(`${PREFIJO}.declinaciones`);
     this.otelLockRedis = meter.createCounter(`${PREFIJO}.lock_redis.errores`);
+    this.otelGpsLotes = meter.createCounter(`${PREFIJO}.gps.lotes`);
+    this.otelGpsUbicaciones = meter.createCounter(`${PREFIJO}.gps.ubicaciones`);
   }
 
   httpRespuesta(status: number): void {
@@ -81,6 +91,27 @@ export class RegistroMetricas {
     this.otelLockRedis.add(1);
   }
 
+  /**
+   * Un lote del agente GPS (ADR-0007). Solo conteos por resultado: ni placas ni coordenadas, que
+   * son dato personal del conductor (spec §12).
+   */
+  gpsLote(resultado: { guardadas: number; duplicadas: number; ignoradas: number }): void {
+    this.gpsLotes += 1;
+    this.otelGpsLotes.add(1);
+    // Solo estos tres, nombrados a mano: el resultado de la ingesta trae además el id del lote y
+    // el intervalo, que no son conteos y no tienen nada que hacer en una métrica.
+    const conteos = {
+      guardadas: resultado.guardadas,
+      duplicadas: resultado.duplicadas,
+      ignoradas: resultado.ignoradas,
+    };
+    for (const [clave, valor] of Object.entries(conteos)) {
+      if (!Number.isFinite(valor) || valor <= 0) continue;
+      this.gpsUbicaciones.set(clave, (this.gpsUbicaciones.get(clave) ?? 0) + valor);
+      this.otelGpsUbicaciones.add(valor, { resultado: clave });
+    }
+  }
+
   get resumen() {
     return {
       http: Object.fromEntries(this.httpPorClase),
@@ -91,6 +122,8 @@ export class RegistroMetricas {
       },
       declinaciones: this.declinaciones,
       lockRedisErrores: this.lockRedisErrores,
+      gpsLotes: this.gpsLotes,
+      gpsUbicaciones: Object.fromEntries(this.gpsUbicaciones),
     };
   }
 
@@ -138,6 +171,21 @@ export class RegistroMetricas {
     lineas.push(`${PREFIJO}_ofertas_abiertas ${enVivo.ofertasAbiertas}`);
     metrica('declinaciones_hoy', 'gauge', 'Declinaciones del día (zona de la operación)');
     lineas.push(`${PREFIJO}_declinaciones_hoy ${enVivo.declinacionesHoy}`);
+    // Ubicación GPS (ADR-0007): sin placas ni coordenadas, solo conteos.
+    metrica('gps_lotes_total', 'counter', 'Lotes de ubicaciones recibidos del agente GPS');
+    lineas.push(`${PREFIJO}_gps_lotes_total ${this.gpsLotes}`);
+    metrica('gps_ubicaciones_total', 'counter', 'Ubicaciones recibidas por resultado');
+    for (const [resultado, valor] of this.gpsUbicaciones) {
+      lineas.push(`${PREFIJO}_gps_ubicaciones_total{resultado="${resultado}"} ${valor}`);
+    }
+    if (enVivo.gpsUltimoLoteSegundos !== undefined && enVivo.gpsUltimoLoteSegundos !== null) {
+      metrica('gps_ultimo_lote_segundos', 'gauge', 'Segundos desde el último lote del agente GPS');
+      lineas.push(`${PREFIJO}_gps_ultimo_lote_segundos ${enVivo.gpsUltimoLoteSegundos}`);
+    }
+    if (enVivo.gpsPlacasSinSenal !== undefined) {
+      metrica('gps_placas_sin_senal', 'gauge', 'Placas activas sin señal GPS');
+      lineas.push(`${PREFIJO}_gps_placas_sin_senal ${enVivo.gpsPlacasSinSenal}`);
+    }
     metrica('uptime_seconds', 'gauge', 'Segundos desde el arranque');
     lineas.push(`${PREFIJO}_uptime_seconds ${Math.round((Date.now() - this.inicio) / 1000)}`);
     return `${lineas.join('\n')}\n`;

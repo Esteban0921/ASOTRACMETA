@@ -13,7 +13,7 @@ const API_URL = process.env.API_URL ?? 'http://127.0.0.1:3001';
  */
 const pwa = VitePWA({
   registerType: 'autoUpdate',
-  includeAssets: ['icono.svg'],
+  includeAssets: ['icono.svg', 'fonts/inter-latin-var.woff2'],
   manifest: {
     name: 'Mi turno · ASOTRACMET',
     short_name: 'Mi turno',
@@ -21,7 +21,7 @@ const pwa = VitePWA({
     start_url: '/',
     scope: '/',
     display: 'standalone',
-    background_color: '#f4f6f5',
+    background_color: '#f5f4ef',
     theme_color: '#0f3d3e',
     lang: 'es',
     icons: [
@@ -31,6 +31,11 @@ const pwa = VitePWA({
     ],
   },
   workbox: {
+    // La fuente autohospedada (TASK-0044) y los iconos entran al precache junto con el shell.
+    globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+    // El mapa (Leaflet, TASK-0066) queda fuera: el precache existe para que "Mi turno" funcione
+    // sin conexión, y un mapa sin teselas no sirve de nada. Las teselas jamás se cachean.
+    globIgnores: ['**/mapa-*.js', '**/mapa-*.css', '**/Mapa-*.js'],
     navigateFallback: '/index.html',
     navigateFallbackDenylist: [/^\/api\//, /^\/healthz/, /^\/readyz/, /^\/metrics/],
     runtimeCaching: [
@@ -54,6 +59,14 @@ const pwa = VitePWA({
 
 export default defineConfig({
   plugins: [react(), pwa],
+  build: {
+    rollupOptions: {
+      // Nombre estable para el trozo del mapa: así `globIgnores` puede dejarlo fuera del precache.
+      output: {
+        manualChunks: (id: string) => (id.includes('node_modules/leaflet') ? 'mapa' : undefined),
+      },
+    },
+  },
   server: {
     port: 5173,
     strictPort: true,

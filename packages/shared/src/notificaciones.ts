@@ -12,6 +12,10 @@ export const EVENTOS_NOTIFICACION = [
   'tr.cancelado',
   'documento.por_vencer',
   'recaudo.pendiente',
+  // Avisos proactivos del job del minuto (spec §14, brief §5; TASK-0057): antes de perder el turno.
+  'cola.proximo',
+  'documento.bloquea_turno',
+  'cola.sin_elegibles',
 ] as const;
 export type EventoNotificacion = (typeof EVENTOS_NOTIFICACION)[number];
 

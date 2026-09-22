@@ -24,6 +24,10 @@ const RUTAS_PUBLICAS = new Set([
   '/api/v1/auth/otp/verify',
   '/api/v1/auth/magic-link',
   '/api/v1/auth/magic-link/canjear',
+  // Ingesta del agente GPS (ADR-0007): máquina a máquina con token de servicio, como `/metrics`.
+  // Excepción explícita a RULE-022; la ruta valida el token y escribe con el contexto RLS
+  // `gps_ingesta`, que no tiene autoridad sobre cola, ofertas, TR ni documentos.
+  '/api/v1/gps/ubicaciones',
 ]);
 
 export interface OpcionesAuth {

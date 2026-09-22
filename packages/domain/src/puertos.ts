@@ -3,6 +3,7 @@ import type {
   Asociado,
   Cliente,
   ColaPosicion,
+  Descarte,
   Documento,
   Habilitacion,
   MotivoDeclinacion,
@@ -51,6 +52,11 @@ export interface Transaccion {
   ofertasAbiertasDeVehiculo(vehiculoId: string): Promise<Oferta[]>;
   ofertasAbiertasDeRequerimiento(requerimientoId: string): Promise<Oferta[]>;
   ofertasAbiertasVencidas(ahora: string): Promise<Oferta[]>;
+  /**
+   * Acta de turno (brief §5, spec §21): las placas que la oferta saltó, con su motivo, en la
+   * misma transacción que la oferta. Append-only e idempotente por `(ofertaId, vehiculoId)`.
+   */
+  guardarSaltos(ofertaId: string, descartes: readonly Descarte[]): Promise<void>;
 
   tr(id: string): Promise<Tr | undefined>;
   guardarTr(tr: Tr): Promise<void>;

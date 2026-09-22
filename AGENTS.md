@@ -20,6 +20,8 @@ pnpm test:e2e                # Playwright: levanta API en modo e2e y la web
 pnpm test:db                 # migraciones + RLS contra DATABASE_URL_TEST (o DATABASE_URL): solo bases `*_test`, trunca tablas
 pnpm test:redis              # lock distribuido cola:{clase} contra REDIS_URL (se omite si no está definida)
 pnpm build:contrato          # regenera docs/openapi.json (CI falla si no está al día)
+pnpm gps:agente              # agente GPS satélite contra la API local (ADR-0007). Sin credenciales:
+                             # GPS_CUENTAS_ARCHIVO=infra/gps-cuentas.example.json GPS_PROVEEDOR_FORZADO=simulado
 ```
 
 Usuarios de desarrollo (contraseña `Asotracmet2026!`): `superadmin@`, `ops@`, `hseq@`, `finance@`,

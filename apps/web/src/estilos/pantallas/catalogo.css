@@ -1,0 +1,34 @@
+/* Catálogo vivo de componentes (/dev/ui, solo en desarrollo; TASK-0045) */
+
+.catalogo {
+  max-width: var(--ancho-max);
+  margin: 0 auto;
+  display: grid;
+  gap: var(--e-6);
+
+  & > header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--e-3);
+  }
+
+  & .catalogo-seccion {
+    display: grid;
+    gap: var(--e-3);
+  }
+
+  & .catalogo-fila {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--e-3);
+  }
+
+  & .catalogo-muestra {
+    padding: var(--e-4);
+    border: 1px dashed var(--borde-fuerte);
+    border-radius: var(--r-l);
+  }
+}

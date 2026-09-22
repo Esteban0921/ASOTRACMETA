@@ -64,6 +64,12 @@ El producto existe para que **un superadmin configure reglas**, **unos admins op
 
 - TMS / RNDC / manifiestos / factura electrónica DIAN.
 - Telemetría GPS en vivo (solo se guarda qué proveedor usan; jamás la clave).
+  - *Ampliación acotada, decidida en ADR-0007 (TASK-0062, 2026-09-22):* sí entra, como satélite de
+    fase 4 (§19), la **última ubicación conocida por placa refrescada cada pocos minutos** con su
+    historial de retención corta, que un proceso aparte trae de la plataforma del propietario. Lo
+    que sigue fuera: el seguimiento segundo a segundo, las geocercas y cualquier regla de cola que
+    dependa de la posición. Lo de «jamás la clave» **no cambia**: las credenciales viven en un
+    archivo de secretos del host, nunca en la base (§12, §20.9).
 - App de chat. WhatsApp queda como canal de notificación, no como base de datos.
 - Contabilidad completa de la asociación.
 - Multipaís o multi-asociación. Un tenant: ASOTRACMET.
@@ -930,6 +936,9 @@ Done: el 3% del mes sale del sistema, no de una suma a ojo.
 - Presupuesto de la asociación.
 - Registro de asistencia.
 - Integraciones posteriores (RNDC, GPS) como satélites.
+  - GPS: hecho a medias desde 2026-09-22 (ADR-0007). La API ya recibe y guarda ubicaciones
+    (TASK-0062) y las expone con el reparto de permisos de §3.2 (TASK-0063); faltan el agente que
+    consulta a la plataforma, las pantallas y el mapa (TASK-0064..0066).
 
 ---
 
@@ -945,6 +954,8 @@ Done: el 3% del mes sale del sistema, no de una suma a ojo.
 8. Restore de backup en staging < 2 h.
 9. Cero secretos de GPS en la base.
 10. Informe de migración con excepciones abiertas, no “ya quedó”.
+11. Un `viewer` no obtiene coordenadas de ningún vehículo y un `member` no obtiene la ubicación de
+    una placa ajena, ni por la lista, ni por la ficha, ni por el recorrido (ADR-0007).
 
 ---
 

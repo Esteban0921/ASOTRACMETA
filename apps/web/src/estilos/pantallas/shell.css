@@ -1,0 +1,176 @@
+/*
+ * Cabecera superior restilizada sobre los tokens (TASK-0044). El AppShell con sidebar y barra
+ * inferior es TASK-0047: aquí solo cambia la piel de Layout.tsx, no sus testids ni su estructura
+ * de navegación (una sola nav montada).
+ */
+
+.app {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.cabecera {
+  background: var(--cabecera-fondo);
+  color: var(--sobre-marca);
+  box-shadow: inset 0 -1px 0 rgb(255 255 255 / 0.06);
+}
+
+.cabecera-fila {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--e-4);
+  min-height: 60px;
+  padding: var(--e-2) var(--e-5);
+}
+
+.cabecera-logo {
+  display: inline-flex;
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--r-s);
+}
+
+/* Marca: monograma "A" de dos carreteras al horizonte con sol ocre (componentes/Marca.tsx) */
+.marca {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--e-2);
+  color: inherit;
+  line-height: 1;
+
+  & .marca-texto {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  & .marca-nombre {
+    font-size: var(--t-base);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
+
+  & .marca-lema {
+    font-size: var(--t-xs);
+    letter-spacing: 0.02em;
+    color: var(--sobre-marca-2);
+  }
+}
+
+.nav {
+  display: flex;
+  gap: var(--e-1);
+  padding: 0 var(--e-3);
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-top: 1px solid rgb(255 255 255 / 0.08);
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  & a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 var(--e-3);
+    color: var(--sobre-marca-2);
+    text-decoration: none;
+    font-weight: 600;
+    font-size: var(--t-sm);
+    white-space: nowrap;
+    border-bottom: 3px solid transparent;
+    border-radius: var(--r-s) var(--r-s) 0 0;
+    transition:
+      color var(--dur-1) var(--curva),
+      background-color var(--dur-1) var(--curva),
+      border-color var(--dur-1) var(--curva);
+  }
+
+  & a:hover {
+    color: var(--sobre-marca);
+    background: rgb(255 255 255 / 0.06);
+  }
+
+  & a.activo,
+  & a[aria-current='page'] {
+    color: var(--sobre-marca);
+    border-bottom-color: var(--foco-sobre-marca);
+  }
+}
+
+.usuario {
+  display: flex;
+  align-items: center;
+  gap: var(--e-3);
+  flex-shrink: 0;
+
+  & .usuario-nombre {
+    font-weight: 600;
+    font-size: var(--t-sm);
+    white-space: nowrap;
+  }
+
+  & .rol {
+    font-size: var(--t-xs);
+    line-height: var(--lh-xs);
+    font-weight: 600;
+    padding: 2px var(--e-2);
+    border-radius: var(--r-pill);
+    background: rgb(255 255 255 / 0.12);
+    color: var(--sobre-marca);
+    white-space: nowrap;
+  }
+}
+
+/* Botones sutiles sobre la banda de marca (Salir) */
+.cabecera-marca button.sutil {
+  color: var(--sobre-marca);
+  border-color: rgb(255 255 255 / 0.25);
+
+  &:hover:not(:disabled) {
+    background: rgb(255 255 255 / 0.12);
+  }
+}
+
+.contenido {
+  flex: 1;
+  width: 100%;
+  padding: var(--e-5);
+}
+
+:root[data-densidad='bolsillo'] .contenido {
+  padding: var(--e-4);
+}
+
+/* PWA: aviso de sin conexión (spec §9.1) */
+.sin-conexion {
+  margin: 0;
+  padding: var(--e-2) var(--e-4);
+  background: var(--ambar-fondo);
+  color: var(--ambar-texto);
+  border-bottom: 1px solid var(--ambar-borde);
+  font-weight: 600;
+  font-size: var(--t-sm);
+  line-height: var(--lh-sm);
+  text-align: center;
+}
+
+@media (max-width: 767px) {
+  .cabecera-fila {
+    padding: var(--e-2) var(--e-4);
+    gap: var(--e-2);
+  }
+
+  .marca .marca-lema,
+  .usuario .usuario-nombre,
+  .usuario .rol {
+    display: none;
+  }
+
+  .contenido {
+    padding: var(--e-4);
+  }
+}

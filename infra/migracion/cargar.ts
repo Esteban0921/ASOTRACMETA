@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import { nombreMotivoBloqueo } from '@asotracmet/shared';
 import { cifrar } from '@asotracmet/api/cifrado';
 import { crearSeed, ID_USUARIO_SISTEMA } from '@asotracmet/api/seed';
 import { uuidSemilla } from '@asotracmet/api/seed-postgres';
@@ -299,18 +300,24 @@ export async function cargarPlan(
       op.ahora.toISOString().slice(0, 10),
     ]);
     for (const h of plan.habilitaciones) {
+      // `motivo_bloqueo` lleva el nombre del catálogo (TASK-0059); la marca del TURNERO es nota.
       await cliente.query(
-        `insert into habilitaciones (id, vehiculo_id, cliente_id, apto, motivo_bloqueo, requisitos)
-         values ($1, $2, $3, $4, $5, $6::jsonb)
+        `insert into habilitaciones (id, vehiculo_id, cliente_id, apto, motivo_bloqueo,
+                                     motivo_bloqueo_codigo, motivo_bloqueo_nota, requisitos)
+         values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
          on conflict (vehiculo_id, cliente_id) do update set
            apto = excluded.apto, motivo_bloqueo = excluded.motivo_bloqueo,
+           motivo_bloqueo_codigo = excluded.motivo_bloqueo_codigo,
+           motivo_bloqueo_nota = excluded.motivo_bloqueo_nota,
            requisitos = excluded.requisitos, updated_at = now()`,
         [
           ID.habilitacion(h.placa, h.cliente),
           ID.vehiculo(h.placa),
           idCliente.get(h.cliente),
           h.apto,
-          h.motivoBloqueo,
+          h.motivoBloqueoCodigo ? nombreMotivoBloqueo(h.motivoBloqueoCodigo) : null,
+          h.motivoBloqueoCodigo,
+          h.nota,
           JSON.stringify(h.requisitos),
         ],
       );

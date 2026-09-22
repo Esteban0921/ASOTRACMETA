@@ -1,0 +1,51 @@
+{
+  "_comentario": [
+    "EJEMPLO. El archivo real (gps-cuentas.json) vive en el host, con permisos 0400, fuera de git",
+    "y fuera de los backups: tiene las claves de las plataformas de GPS de los propietarios y no",
+    "puede entrar nunca en la base de datos (ADR-0007, RULE-021, spec §12 y §20.9). Solo se monta",
+    "de solo lectura en el contenedor del agente.",
+    "Las placas de aquí son las 17 de la semilla anonimizada, repartidas en tres cuentas, para",
+    "poder probar el circuito completo con el proveedor 'simulado' sin salir a la red.",
+    "Cuando exista el adaptador real (TASK-0067), 'proveedor' pasa a ser 'viagps' y usuario y clave",
+    "son los de la cuenta de ese propietario en https://gpsmobile.net."
+  ],
+  "version": 1,
+  "cuentas": [
+    {
+      "id": "prueba-tm-cbz",
+      "proveedor": "simulado",
+      "usuario": "propietario-de-prueba-1",
+      "clave": "no-es-una-clave-real",
+      "placas": [
+        "SPS413",
+        "FST189",
+        "TKM221",
+        "SWI750",
+        "QOR007",
+        "SOF336",
+        "SUL470",
+        "WGT908",
+        "SNB552",
+        "UFR114"
+      ],
+      "autorizacion": {
+        "referencia": "Términos y condiciones de asociado, cláusula de tratamiento de datos",
+        "firmadaEn": "2026-01-01"
+      }
+    },
+    {
+      "id": "prueba-c100-c350",
+      "proveedor": "simulado",
+      "usuario": "propietario-de-prueba-2",
+      "clave": "no-es-una-clave-real",
+      "placas": ["GXT301", "LMR742", "KJP160", "NBV523", "RTY871"]
+    },
+    {
+      "id": "prueba-c600-mm",
+      "proveedor": "simulado",
+      "usuario": "propietario-de-prueba-3",
+      "clave": "no-es-una-clave-real",
+      "placas": ["HJK640", "MMX210"]
+    }
+  ]
+}

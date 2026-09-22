@@ -110,7 +110,44 @@ solo si se hizo `up` sin `--force-recreate`; por eso el backup va antes de cada 
   cada 5 s y recalcula documentos cada noche (spec §14); no hay que programar nada aparte.
 - Runbooks mínimos en ARCHITECTURE §14.
 
-## 7. Fly.io / Render
+## 7. Agente GPS (opcional, ADR-0007)
+
+El agente es el proceso que consulta las plataformas de GPS de los propietarios y entrega las
+posiciones a la API. Corre en su propio contenedor, con un perfil aparte, porque es el único que ve
+esas credenciales. La API funciona igual sin él: simplemente no habrá ubicaciones.
+
+```bash
+# 1. Token de servicio de la ingesta, en .env.prod
+openssl rand -base64 32        # → GPS_INGESTA_TOKEN
+
+# 2. Archivo de cuentas en el host, fuera del repositorio y de los backups
+sudo mkdir -p /etc/asotracmet
+sudo cp infra/gps-cuentas.example.json /etc/asotracmet/gps-cuentas.json
+sudo -e /etc/asotracmet/gps-cuentas.json       # una entrada por cuenta de propietario
+sudo chown 1000:1000 /etc/asotracmet/gps-cuentas.json
+sudo chmod 0400 /etc/asotracmet/gps-cuentas.json
+# En .env.prod: GPS_CUENTAS_ARCHIVO_HOST=/etc/asotracmet/gps-cuentas.json
+
+# 3. Primero la app (que construye la imagen), después el agente
+docker compose -f infra/compose.prod.yaml --env-file .env.prod up -d --build app
+docker compose -f infra/compose.prod.yaml --env-file .env.prod --profile gps up -d gps-agente
+docker compose -f infra/compose.prod.yaml --env-file .env.prod --profile gps logs -f gps-agente
+```
+
+Variables del agente: `GPS_INGESTA_TOKEN` (obligatoria), `GPS_CUENTAS_ARCHIVO_HOST`,
+`GPS_INTERVALO_MINUTOS` (solo el arranque: manda el parámetro `gps_intervalo_minutos` de la
+pantalla de parámetros), `GPS_TIMEOUT_MS`, `GPS_CONCURRENCIA` y `GPS_PROVEEDOR_FORZADO` (ponlo en
+`simulado` para probar el circuito sin salir a la red). En la API: `GPS_INGESTA_TOKEN`,
+`GPS_INGESTA_TOKEN_ANTERIOR` (para rotar sin corte) y `GPS_INGESTA_RATE_LIMIT_MAX`.
+
+Con este perfil activo, **define `METRICS_TOKEN`**: `/metrics` pasa a describir el estado de la
+flota (`asotracmet_gps_ultimo_lote_segundos`, `asotracmet_gps_placas_sin_senal`).
+
+Qué **no** hay que hacer: guardar las claves de las plataformas en la base, montarles el archivo al
+contenedor `app`, o incluirlo en los backups. Todo eso rompería el compromiso de spec §12 y §20.9.
+Operación y diagnóstico: [runbooks/gps-agente.md](runbooks/gps-agente.md).
+
+## 8. Fly.io / Render
 
 La misma imagen sirve: `fly launch --dockerfile Dockerfile`, Postgres gestionado y las variables de
 la sección 2 como secretos (`fly secrets set …`). En Render: servicio web desde el Dockerfile y una

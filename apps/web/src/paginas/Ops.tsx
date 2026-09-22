@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { CLASES_COLA, puede, type ClaseCola } from '@asotracmet/shared';
 import { api, codigoDeError } from '../api/cliente';
 import type {
+  VistaUbicacion,
   Cliente,
   Intervencion,
   VistaCola,
@@ -10,6 +11,7 @@ import type {
   VistaRequerimiento,
   VistaTr,
 } from '../api/tipos';
+import { UltimaUbicacion } from '../componentes/UltimaUbicacion';
 import { useSesion } from '../sesion/contexto';
 import {
   formatearFechaHora,
@@ -20,6 +22,9 @@ import {
 } from '../utils/formato';
 
 const REFRESCO_MS = 4_000;
+// La ubicación cambia cada `gps_intervalo_minutos` (20 por defecto): no hace falta el refresco
+// de 4 s del resto de la pantalla.
+const REFRESCO_UBICACIONES_MS = 60_000;
 
 /** Sala de turnos (spec §9.2 Ops): requerimientos · colas · actividad. El frontend nunca elige "quién sigue". */
 export function Ops() {
@@ -39,6 +44,11 @@ export function Ops() {
     queryKey: ['requerimientos', 'abierto'],
     queryFn: () => api<VistaRequerimiento[]>('/requerimientos?estado=abierto'),
     refetchInterval: REFRESCO_MS,
+  });
+  const ubicaciones = useQuery({
+    queryKey: ['ops', 'ubicaciones'],
+    queryFn: () => api<VistaUbicacion[]>('/vehiculos/ubicaciones'),
+    refetchInterval: REFRESCO_UBICACIONES_MS,
   });
   const cola = useQuery({
     queryKey: ['cola', clase, clienteActivo],
@@ -92,6 +102,9 @@ export function Ops() {
     },
     onError: (e) => setError(traducirError(codigoDeError(e))),
   });
+
+  // La última ubicación de cada placa, para pintarla en la fila de la cola sin otra consulta.
+  const porVehiculo = new Map((ubicaciones.data ?? []).map((u) => [u.vehiculoId, u]));
 
   return (
     <div className="sala">
@@ -167,6 +180,7 @@ export function Ops() {
               <th>Ronda</th>
               <th>Turnos</th>
               <th>Estado</th>
+              <th>GPS</th>
             </tr>
           </thead>
           <tbody>
@@ -193,6 +207,13 @@ export function Ops() {
                     <span className={`badge ${p.elegibilidad.elegible ? 'verde' : 'gris'}`}>
                       {textoElegibilidad(p.elegibilidad.motivo)}
                     </span>
+                  </td>
+                  <td>
+                    <UltimaUbicacion
+                      ubicacion={porVehiculo.get(p.vehiculoId) ?? null}
+                      placa={p.placa}
+                      variante="chip"
+                    />
                   </td>
                 </tr>
               );

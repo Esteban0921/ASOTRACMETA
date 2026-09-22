@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import {
   PARAMETROS_DEFAULT,
   claseColaDe,
+  nombreMotivoBloqueo,
   type ClaseVehiculo,
   type Rol,
   PREFERENCIAS_POR_DEFECTO,
@@ -132,17 +133,18 @@ export function crearSeed(
       estado: 'activo',
       noElegibleHasta: null,
     });
+    // Motivo del catálogo cerrado (TASK-0059): la cola y el acta solo ven este nombre.
     estado.habilitaciones.push({
       vehiculoId: id,
       clienteId: 'cli-hlb',
       apto: fila.hlb,
-      motivoBloqueo: fila.hlb ? null : 'Curso HLB vencido',
+      motivoBloqueo: fila.hlb ? null : nombreMotivoBloqueo('CURSO_VENCIDO'),
     });
     estado.habilitaciones.push({
       vehiculoId: id,
       clienteId: 'cli-baker',
       apto: fila.baker === true,
-      motivoBloqueo: fila.baker ? null : 'No habilitada',
+      motivoBloqueo: fila.baker ? null : nombreMotivoBloqueo('SIN_CERTIFICACION'),
     });
     const posicion = (contadorPorCola.get(claseCola) ?? 0) + 1;
     contadorPorCola.set(claseCola, posicion);

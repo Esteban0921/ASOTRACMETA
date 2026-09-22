@@ -46,6 +46,7 @@ describe.skipIf(!url)('migraciones Postgres (spec §6, §16 RLS)', () => {
       'parametros',
       'requerimientos',
       'cola_posiciones',
+      'vehiculo_ubicaciones',
       'ofertas',
       'motivos_declinacion',
       'trs',

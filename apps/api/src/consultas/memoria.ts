@@ -3,6 +3,7 @@ import type {
   EstadoMemoria,
   EventoAuditoria,
   Oferta,
+  OfertaSalto,
   Requerimiento,
   Tr,
 } from '@asotracmet/domain';
@@ -10,6 +11,8 @@ import {
   ESTADOS_TR_VIGENTES,
   enmascararDocumento,
   etiquetaAsociadoPlaca,
+  fechaLocal,
+  type ClaseCola,
   type Parametros,
 } from '@asotracmet/shared';
 import type {
@@ -19,11 +22,15 @@ import type {
   FiltroRequerimientos,
   FiltroTrs,
   MiPosicion,
+  RangoFechas,
   VistaCliente,
   VistaDestino,
   VistaMotivo,
   VistaOferta,
   VistaRequerimiento,
+  VistaSalto,
+  VistaSaltoAgregado,
+  VistaSaltoPropio,
   VistaTr,
   VistaVehiculo,
 } from './tipos.js';
@@ -87,6 +94,46 @@ export function vistaTr(estado: EstadoMemoria, tr: Tr): VistaTr {
     etiqueta: vehiculo
       ? etiquetaAsociadoPlaca(nombreAsociado(estado, vehiculo.asociadoId), vehiculo.placa)
       : null,
+  };
+}
+
+function vistaSalto(estado: EstadoMemoria, salto: OfertaSalto): VistaSalto {
+  const vehiculo = estado.vehiculos.find((v) => v.id === salto.vehiculoId);
+  return {
+    id: salto.id,
+    ofertaId: salto.ofertaId,
+    vehiculoId: salto.vehiculoId,
+    placa: salto.placa,
+    etiqueta: etiquetaAsociadoPlaca(
+      vehiculo ? nombreAsociado(estado, vehiculo.asociadoId) : 'ASOCIADO DESCONOCIDO',
+      salto.placa,
+    ),
+    posicion: salto.posicion,
+    motivo: salto.motivo,
+    detalle: salto.detalle,
+    creadoEn: salto.creadoEn,
+  };
+}
+
+/** `undefined` si la oferta o su requerimiento no existen: equivale al `join` del adaptador Postgres. */
+function vistaSaltoPropio(estado: EstadoMemoria, salto: OfertaSalto): VistaSaltoPropio | undefined {
+  const oferta = estado.ofertas.find((o) => o.id === salto.ofertaId);
+  const requerimiento = oferta
+    ? estado.requerimientos.find((r) => r.id === oferta.requerimientoId)
+    : undefined;
+  if (!oferta || !requerimiento) return undefined;
+  const cliente = estado.clientes.find((c) => c.id === requerimiento.clienteId);
+  const destino = requerimiento.destinoId
+    ? estado.destinos.find((d) => d.id === requerimiento.destinoId)
+    : null;
+  return {
+    ...vistaSalto(estado, salto),
+    claseCola: requerimiento.claseCola,
+    requerimientoId: requerimiento.id,
+    cliente: cliente?.codigo ?? null,
+    destino: destino?.nombre ?? null,
+    fechaServicio: requerimiento.fechaServicio,
+    ofertaEstado: oferta.estado,
   };
 }
 
@@ -213,6 +260,54 @@ export class ConsultasMemoria implements Consultas {
       }
     }
     return resultado.sort((a, b) => a.placa.localeCompare(b.placa));
+  }
+
+  async saltosDeOferta(ofertaId: string): Promise<VistaSalto[]> {
+    return this.estado.saltos
+      .filter((s) => s.ofertaId === ofertaId)
+      .sort((a, b) => a.posicion - b.posicion)
+      .map((s) => vistaSalto(this.estado, s));
+  }
+
+  async saltosDeVehiculos(
+    vehiculoIds: readonly string[],
+    rango: RangoFechas = {},
+  ): Promise<VistaSaltoPropio[]> {
+    const propias = new Set(vehiculoIds);
+    const { timezone } = this.estado.parametros;
+    const fecha = (s: OfertaSalto) => fechaLocal(new Date(s.creadoEn), timezone);
+    return [...this.estado.saltos]
+      .reverse() // a igual instante (reloj fijo en tests), el último registrado primero
+      .filter((s) => propias.has(s.vehiculoId))
+      .filter((s) => !rango.desde || fecha(s) >= rango.desde)
+      .filter((s) => !rango.hasta || fecha(s) <= rango.hasta)
+      .sort((a, b) => b.creadoEn.localeCompare(a.creadoEn))
+      .flatMap((s) => vistaSaltoPropio(this.estado, s) ?? []);
+  }
+
+  async saltosPorClase(claseCola: ClaseCola, mes: string): Promise<VistaSaltoAgregado[]> {
+    const { timezone } = this.estado.parametros;
+    const agregados = new Map<string, VistaSaltoAgregado>();
+    for (const salto of this.estado.saltos) {
+      const propio = vistaSaltoPropio(this.estado, salto);
+      if (!propio || propio.claseCola !== claseCola) continue;
+      if (!fechaLocal(new Date(salto.creadoEn), timezone).startsWith(`${mes}-`)) continue;
+      const clave = `${salto.vehiculoId}:${salto.motivo}`;
+      const actual = agregados.get(clave);
+      if (actual) actual.total += 1;
+      else {
+        agregados.set(clave, {
+          vehiculoId: salto.vehiculoId,
+          placa: salto.placa,
+          etiqueta: propio.etiqueta,
+          motivo: salto.motivo,
+          total: 1,
+        });
+      }
+    }
+    return [...agregados.values()].sort(
+      (a, b) => a.placa.localeCompare(b.placa) || a.motivo.localeCompare(b.motivo),
+    );
   }
 
   async parametros(): Promise<Parametros> {

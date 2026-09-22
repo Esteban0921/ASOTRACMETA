@@ -9,6 +9,9 @@ import { AuthMemoria, type RepositorioAuth } from '../auth/sesiones.js';
 import { ConsultasMemoria } from '../consultas/memoria.js';
 import { ConsultasPostgres } from '../consultas/postgres.js';
 import type { Consultas } from '../consultas/tipos.js';
+import { UbicacionesMemoria } from '../gps/memoria.js';
+import { UbicacionesPostgres } from '../gps/postgres.js';
+import type { RepositorioUbicaciones } from '../gps/tipos.js';
 import { MaestrosMemoria } from '../maestros/memoria.js';
 import { MaestrosPostgres } from '../maestros/postgres.js';
 import type { RepositorioMaestros } from '../maestros/tipos.js';
@@ -41,6 +44,8 @@ export interface Almacenamiento {
   readonly metricas: RepositorioMetricas;
   /** Outbox de avisos y bandeja in-app (spec §11, TASK-0026). */
   readonly notificaciones: RepositorioNotificaciones;
+  /** Ubicación GPS por placa, que deja el agente satélite (ADR-0007, TASK-0062). */
+  readonly ubicaciones: RepositorioUbicaciones;
   /**
    * Traduce un identificador legible de la semilla al que usa este almacén.
    * En memoria es el mismo; en Postgres, su UUID determinista.
@@ -69,6 +74,7 @@ export function almacenamientoMemoria(opciones: {
   const viajes = new ViajesMemoria(almacen, maestros);
   const metricas = new MetricasMemoria();
   const notificaciones = new NotificacionesMemoria(almacen, opciones.ids);
+  const ubicaciones = new UbicacionesMemoria();
   return {
     clase: 'memoria',
     uow: almacen,
@@ -79,6 +85,7 @@ export function almacenamientoMemoria(opciones: {
     viajes,
     metricas,
     notificaciones,
+    ubicaciones,
     idSemilla: (nombre) => nombre,
     reiniciar: async () => {
       const nuevo = crearSeed(opciones.reloj.ahora(), opciones.claveCifrado);
@@ -89,6 +96,7 @@ export function almacenamientoMemoria(opciones: {
       viajes.limpiar();
       metricas.limpiar();
       notificaciones.limpiar();
+      ubicaciones.limpiar();
     },
     cerrar: async () => undefined,
   };
@@ -106,6 +114,7 @@ export function almacenamientoPostgres(opciones: { pool: pg.Pool }): Almacenamie
     viajes: new ViajesPostgres(opciones.pool),
     metricas: new MetricasPostgres(opciones.pool),
     notificaciones: new NotificacionesPostgres(opciones.pool),
+    ubicaciones: new UbicacionesPostgres(opciones.pool),
     idSemilla: uuidSemilla,
     cerrar: () => almacen.cerrar(),
   };

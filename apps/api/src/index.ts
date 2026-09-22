@@ -1,5 +1,6 @@
 import { fechaLocal } from '@asotracmet/shared';
 import { construirApp } from './app.js';
+import { purgarUbicaciones } from './rutas/gps.js';
 import { mesAnterior, tableroDe } from './rutas/tablero.js';
 
 const { app, motor, config, actorSistema, almacenamiento, reloj, worker, correrAvisos } =
@@ -25,6 +26,14 @@ async function recalcularDocumentos(): Promise<void> {
   const hoy = fechaLocal(reloj.ahora(), timezone);
   const recalculados = await almacenamiento.maestros.recalcularEstadosDocumentos(hoy);
   app.log.info({ hoy, recalculados }, 'job recalcular-documentos');
+  // Retención de ubicaciones GPS (ADR-0007): dato personal del conductor, no se guarda para
+  // siempre. Corre con rol `sistema` (sin petición) y conserva la última lectura de cada placa.
+  const purga = await purgarUbicaciones({
+    ubicaciones: almacenamiento.ubicaciones,
+    consultas: almacenamiento.consultas,
+    reloj,
+  });
+  app.log.info(purga, 'job purgar-ubicaciones');
   // Día 1 de cada mes: snapshot de equidad del mes que cerró (§14, `metricas_mes`).
   if (hoy.endsWith('-01')) {
     const mes = mesAnterior(hoy.slice(0, 7));

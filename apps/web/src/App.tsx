@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react';
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { Layout } from './componentes/Layout';
 import { Admin } from './paginas/Admin';
@@ -13,6 +14,9 @@ import { Parametros } from './paginas/Parametros';
 import { Tablero } from './paginas/Tablero';
 import { Usuarios } from './paginas/Usuarios';
 import { useSesion } from './sesion/contexto';
+
+// El mapa carga aparte (ADR-0007, TASK-0066): Leaflet y sus estilos solo llegan a quien lo abre.
+const Mapa = lazy(() => import('./paginas/Mapa'));
 import { rutaInicialPorRol } from './utils/formato';
 
 function RutaProtegida() {
@@ -43,6 +47,14 @@ export default function App() {
         <Route path="/hseq" element={<Hseq />} />
         <Route path="/finance" element={<Finance />} />
         <Route path="/tablero" element={<Tablero />} />
+        <Route
+          path="/mapa"
+          element={
+            <Suspense fallback={<p className="detalle">Cargando mapa…</p>}>
+              <Mapa />
+            </Suspense>
+          }
+        />
         <Route path="/admin" element={<Admin />} />
         <Route path="/admin/usuarios" element={<Usuarios />} />
         <Route path="/admin/parametros" element={<Parametros />} />

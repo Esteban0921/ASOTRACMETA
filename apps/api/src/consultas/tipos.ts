@@ -1,4 +1,4 @@
-import type { EventoAuditoria } from '@asotracmet/domain';
+import type { EventoAuditoria, MotivoNoElegible } from '@asotracmet/domain';
 import type {
   ClaseCola,
   ClaseVehiculo,
@@ -114,6 +114,46 @@ export interface MiPosicion {
   total: number;
 }
 
+// Acta de turno (brief §5, TASK-0053): las placas que una oferta saltó, con su motivo.
+
+/** Un salto tal como lo lee el acta de la oferta (coordinador, veedor) o el propio asociado. */
+export interface VistaSalto {
+  id: string;
+  ofertaId: string;
+  vehiculoId: string;
+  placa: string;
+  etiqueta: string;
+  posicion: number;
+  motivo: MotivoNoElegible;
+  detalle: string | null;
+  creadoEn: string;
+}
+
+/** "Mis turnos que pasaron": el salto con el servicio que le pasó por delante al asociado. */
+export interface VistaSaltoPropio extends VistaSalto {
+  claseCola: ClaseCola;
+  requerimientoId: string;
+  cliente: string | null;
+  destino: string | null;
+  fechaServicio: string | null;
+  ofertaEstado: EstadoOferta;
+}
+
+/** Saltadas por placa y motivo en un mes (tablero y acta del mes). */
+export interface VistaSaltoAgregado {
+  vehiculoId: string;
+  placa: string;
+  etiqueta: string;
+  motivo: MotivoNoElegible;
+  total: number;
+}
+
+/** Fechas de negocio `YYYY-MM-DD` inclusivas, en la zona de `parametros.timezone`. */
+export interface RangoFechas {
+  desde?: string;
+  hasta?: string;
+}
+
 export interface FiltroRequerimientos {
   estado?: EstadoRequerimiento;
   fecha?: string;
@@ -164,6 +204,16 @@ export interface Consultas {
   trPorId(id: string): Promise<VistaTr | undefined>;
 
   posicionesDeVehiculos(vehiculoIds: readonly string[]): Promise<MiPosicion[]>;
+
+  /** Saltos de una oferta en orden de posición (acta de turno). Bajo RLS un member ve los suyos. */
+  saltosDeOferta(ofertaId: string): Promise<VistaSalto[]>;
+  /** Saltos de estas placas, el más reciente primero; `rango` filtra por fecha de negocio. */
+  saltosDeVehiculos(
+    vehiculoIds: readonly string[],
+    rango?: RangoFechas,
+  ): Promise<VistaSaltoPropio[]>;
+  /** Saltadas por placa y motivo en la clase durante `mes` (`YYYY-MM`, zona de `parametros`). */
+  saltosPorClase(claseCola: ClaseCola, mes: string): Promise<VistaSaltoAgregado[]>;
 
   parametros(): Promise<Parametros>;
   audit(filtro: FiltroAudit): Promise<EventoAuditoria[]>;

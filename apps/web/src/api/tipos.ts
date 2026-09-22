@@ -18,6 +18,7 @@ export type {
   RespuestaLogin,
   ResumenMes,
   SemaforoPlaca,
+  VistaUbicacion,
   Sesion,
   Tablero,
   TarifaSugerida,

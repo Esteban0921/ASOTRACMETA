@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { esSoloPropio, puede } from '@asotracmet/shared';
+import { esSoloPropio, puede, veEnmascarado } from '@asotracmet/shared';
 import { api } from '../api/cliente';
 import type { Notificacion } from '../api/tipos';
 import { useSesion } from '../sesion/contexto';
@@ -18,6 +18,8 @@ export function Layout({ children }: { children: ReactNode }) {
   const veHseq = rol ? puede(rol, 'vehiculos', 'R') && rol !== 'member' : false;
   const veFinance = rol ? puede(rol, 'viajes', 'R') && rol !== 'member' : false;
   const veTablero = rol ? puede(rol, 'trs', 'R') && rol !== 'member' : false;
+  // El mapa solo para quien recibe coordenadas: al veedor la API se las manda en nulo (§20.11).
+  const veMapa = rol ? puede(rol, 'vehiculos', 'R') && !veEnmascarado(rol, 'vehiculos') : false;
   // Bandeja de avisos (spec §11): el contador se refresca solo; la página marca leídas.
   const noLeidas = useQuery({
     queryKey: ['me', 'notificaciones', 'no-leidas'],
@@ -67,6 +69,15 @@ export function Layout({ children }: { children: ReactNode }) {
               data-testid="nav-tablero"
             >
               Tablero
+            </Link>
+          )}
+          {veMapa && (
+            <Link
+              to="/mapa"
+              className={pathname === '/mapa' ? 'activo' : ''}
+              data-testid="nav-mapa"
+            >
+              Mapa
             </Link>
           )}
           {veFinance && (

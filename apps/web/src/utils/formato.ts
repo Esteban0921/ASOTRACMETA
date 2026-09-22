@@ -112,6 +112,19 @@ export function textoIntervencion(accion: string): string {
   return INTERVENCIONES[accion] ?? accion;
 }
 
+const ESTADOS_TR_TEXTO: Record<string, string> = {
+  asignado: 'Asignado',
+  en_curso: 'En curso',
+  cumplido: 'Cumplido',
+  cancelado: 'Cancelado',
+  no_tramitar: 'No tramitar',
+};
+
+/** Estado del TR en pantalla: nunca el enum crudo (`no_tramitar`) sino su texto (TASK-0045). */
+export function textoEstadoTr(estado: string): string {
+  return ESTADOS_TR_TEXTO[estado] ?? estado;
+}
+
 export type TonoEstado = 'ambar' | 'verde' | 'rojo' | 'gris';
 
 /** Ámbar = oferta abierta, verde = TR asignado, rojo = cancelado, gris = no habilitado (spec §9.3). */
@@ -239,4 +252,44 @@ export function resumenCambios(before: unknown, after: unknown): string[] {
     }
   }
   return lineas.length > 0 ? lineas : ['sin cambios'];
+}
+
+// --- Ubicación GPS (ADR-0007, TASK-0065) ---------------------------------------------------------
+
+/** "hace 12 min", "hace 3 h", "hace 2 d": la antigüedad la calcula la API, aquí solo se redacta. */
+export function textoHace(minutos: number): string {
+  if (minutos < 1) return 'hace un momento';
+  if (minutos < 60) return `hace ${minutos} min`;
+  const horas = Math.floor(minutos / 60);
+  if (horas < 24) return `hace ${horas} h`;
+  const dias = Math.floor(horas / 24);
+  return dias === 1 ? 'hace 1 día' : `hace ${dias} días`;
+}
+
+const FRESCURAS_TEXTO: Record<string, string> = {
+  reciente: 'Reportando',
+  desactualizada: 'Reporte atrasado',
+  sin_senal: 'Sin señal',
+};
+
+export function textoFrescura(frescura: string): string {
+  return FRESCURAS_TEXTO[frescura] ?? frescura;
+}
+
+export function tonoFrescura(frescura: string): TonoEstado {
+  switch (frescura) {
+    case 'reciente':
+      return 'verde';
+    case 'desactualizada':
+      return 'ambar';
+    case 'sin_senal':
+      return 'rojo';
+    default:
+      return 'gris';
+  }
+}
+
+/** Enlace a un mapa externo. Solo se ofrece a quien recibe coordenadas (el veedor no). */
+export function urlMapaExterno(latitud: number, longitud: number): string {
+  return `https://www.google.com/maps?q=${latitud},${longitud}`;
 }

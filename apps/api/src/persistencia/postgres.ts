@@ -4,6 +4,7 @@ import {
   type Asociado,
   type Cliente,
   type ColaPosicion,
+  type Descarte,
   type Documento,
   type Habilitacion,
   type MotivoDeclinacion,
@@ -545,6 +546,29 @@ class TransaccionPostgres implements Transaccion {
       [ahora],
     );
     return filas.map(aOferta);
+  }
+
+  /**
+   * Acta de turno (brief §5, spec §21): una fila por placa saltada, en la misma transacción que
+   * la oferta. `on conflict do nothing` la hace idempotente por (oferta, placa); la tabla es
+   * append-only por trigger, así que nunca se reescribe.
+   */
+  async guardarSaltos(ofertaId: string, descartes: readonly Descarte[]): Promise<void> {
+    if (descartes.length === 0) return;
+    await this.conexion.query(
+      `insert into oferta_saltos (oferta_id, vehiculo_id, posicion, motivo, detalle)
+       select $1::uuid, x.vehiculo_id, x.posicion, x.motivo, x.detalle
+         from unnest($2::uuid[], $3::int[], $4::text[], $5::text[])
+              as x (vehiculo_id, posicion, motivo, detalle)
+       on conflict (oferta_id, vehiculo_id) do nothing`,
+      [
+        ofertaId,
+        descartes.map((d) => d.vehiculoId),
+        descartes.map((d) => d.posicion),
+        descartes.map((d) => d.motivo),
+        descartes.map((d) => d.detalle),
+      ],
+    );
   }
 
   async tr(id: string): Promise<Tr | undefined> {

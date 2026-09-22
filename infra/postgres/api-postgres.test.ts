@@ -70,7 +70,7 @@ describe.skipIf(!url)('API sobre Postgres (spec §20)', () => {
   /** Deja solo los maestros: la operación y las sesiones se rehacen en cada test. */
   async function limpiarOperacion(): Promise<void> {
     await pool.query(
-      'truncate audit_log, ofertas, trs, requerimientos, cola_posiciones, sesiones, otp_codes, metricas_mes, notificaciones, notificaciones_outbox restart identity cascade',
+      'truncate audit_log, ofertas, trs, requerimientos, cola_posiciones, sesiones, otp_codes, metricas_mes, notificaciones, notificaciones_outbox, vehiculo_ubicaciones restart identity cascade',
     );
     await pool.query(
       `update parametros set value = '{"prefix": "TR-", "next": 41947}'::jsonb where key = 'secuencia_tr'`,
@@ -633,14 +633,23 @@ describe.skipIf(!url)('API sobre Postgres (spec §20)', () => {
         method: 'PUT',
         url: `/api/v1/vehiculos/${id}/habilitaciones/${clienteHlbId}`,
         headers: conToken(hseq),
-        payload: { apto: false, motivoBloqueo: 'Sin curso HLB' },
+        // Catálogo cerrado (TASK-0059): el texto que lee la cola es el nombre del catálogo.
+        payload: { apto: false, motivoBloqueoCodigo: 'CURSO_VENCIDO', nota: 'Sin curso HLB' },
       });
       expect(hab.statusCode, hab.body).toBe(200);
       const { rows: habilitacion } = await pool.query(
-        'select apto, motivo_bloqueo from habilitaciones where vehiculo_id = $1',
+        `select apto, motivo_bloqueo, motivo_bloqueo_codigo, motivo_bloqueo_nota
+           from habilitaciones where vehiculo_id = $1`,
         [id],
       );
-      expect(habilitacion).toEqual([{ apto: false, motivo_bloqueo: 'Sin curso HLB' }]);
+      expect(habilitacion).toEqual([
+        {
+          apto: false,
+          motivo_bloqueo: 'Curso del cliente vencido',
+          motivo_bloqueo_codigo: 'CURSO_VENCIDO',
+          motivo_bloqueo_nota: 'Sin curso HLB',
+        },
+      ]);
 
       const baja = await app.inject({
         method: 'DELETE',

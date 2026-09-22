@@ -1,7 +1,6 @@
 import type {
   ClaseCola,
   ClaseVehiculo,
-  CodigoError,
   EstadoOferta,
   EstadoRequerimiento,
   EstadoTr,
@@ -9,6 +8,7 @@ import type {
   Rol,
   EventoNotificacion,
 } from '@asotracmet/shared';
+import type { MotivoNoElegible } from './elegibilidad.js';
 
 // Tipos del dominio (spec §4 y §6). Timestamps en ISO-8601 UTC; fechas de negocio en YYYY-MM-DD.
 
@@ -182,14 +182,58 @@ export interface NotificacionOutbox extends NuevaNotificacion {
   error: string | null;
 }
 
-export interface Elegibilidad {
-  elegible: boolean;
-  motivo: CodigoError | null;
-  detalle: string | null;
-}
+/**
+ * Resultado de los filtros de §7.2 sobre una fila de la cola: o pasa, o tiene un motivo cerrado
+ * (uno de los siete de `MOTIVOS_NO_ELEGIBLE`) con su detalle en lenguaje de sala.
+ */
+export type Elegibilidad =
+  | { elegible: true; motivo: null; detalle: null }
+  | { elegible: false; motivo: MotivoNoElegible; detalle: string };
 
 export interface PosicionCola extends ColaPosicion {
   vehiculo: Vehiculo;
   asociado: Asociado | null;
   elegibilidad: Elegibilidad;
+}
+
+// Acta de turno (brief §5; spec §7.2, §7.3, §21): quién sale, a quién se salta y por qué, antes y
+// después de ofrecer. El frontend afirma lo que vio y el motor verifica (RULE-010).
+
+/** Placa que quedó por delante de la elegida y no salió, con la posición que tenía en ese momento. */
+export interface Descarte {
+  posicion: number;
+  vehiculoId: string;
+  placa: string;
+  motivo: MotivoNoElegible;
+  detalle: string | null;
+}
+
+/** Descarte persistido en `oferta_saltos` en la misma transacción que la oferta. Append-only. */
+export interface OfertaSalto extends Descarte {
+  id: string;
+  ofertaId: string;
+  creadoEn: string;
+}
+
+export interface CandidatoOferta {
+  vehiculoId: string;
+  placa: string;
+  asociadoId: string;
+  posicion: number;
+}
+
+/** Lo que la sala afirma haber visto al ofrecer: `firma` sale de `VistaPrevia.firma`. */
+export interface EsperadoOferta {
+  vehiculoId: string;
+  firma: string;
+}
+
+/** Vista previa del acta: solo lectura, sin lock ni efectos. `candidato: null` = nadie elegible. */
+export interface VistaPrevia {
+  candidato: CandidatoOferta | null;
+  descartes: Descarte[];
+  firma: string;
+  cuposDisponibles: number;
+  claseCola: ClaseCola;
+  clienteId: string;
 }

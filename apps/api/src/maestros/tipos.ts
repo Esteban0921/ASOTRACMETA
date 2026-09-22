@@ -1,4 +1,9 @@
-import type { ClaseCola, ClaseVehiculo, EstadoVehiculo } from '@asotracmet/shared';
+import type {
+  ClaseCola,
+  ClaseVehiculo,
+  CodigoMotivoBloqueo,
+  EstadoVehiculo,
+} from '@asotracmet/shared';
 
 // Registros completos de los maestros (spec §6.2-6.4). El dominio solo conoce la proyección que
 // necesita el motor; estos tipos son la "ficha" que administra HSEQ / finanzas / superadmin.
@@ -128,7 +133,12 @@ export interface HabilitacionRegistro {
   vehiculoId: string;
   clienteId: string;
   apto: boolean;
+  /** Código del catálogo cerrado (TASK-0059). `null` cuando la placa es apta. */
+  motivoBloqueoCodigo: CodigoMotivoBloqueo | null;
+  /** Nombre del catálogo: lo que ven la cola y el acta de turno. Nunca la nota. */
   motivoBloqueo: string | null;
+  /** Detalle interno de HSEQ; puede ser sensible y solo sale en la ficha (spec §12). */
+  nota: string | null;
   requisitos: Record<string, unknown> | null;
   actualizadoEn: string;
 }

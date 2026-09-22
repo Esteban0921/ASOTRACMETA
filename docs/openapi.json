@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "ASOTRACMET · Enturnamiento",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "API REST del sistema de enturnamiento (spec §8). Errores con código estable (`ErrorApi`); sesiones Bearer opacas y revocables; RBAC por recurso (`x-guard`); `x-reauth` exige re-autenticación reciente."
   },
   "servers": [
@@ -46,6 +46,9 @@
     },
     {
       "name": "Notificaciones"
+    },
+    {
+      "name": "GPS"
     }
   ],
   "paths": {
@@ -5016,7 +5019,7 @@
     "/api/v1/jobs/avisos": {
       "post": {
         "tags": ["Jobs"],
-        "summary": "Avisos por tiempo: oferta por expirar, documento por vencer, digest de recaudo",
+        "summary": "Avisos por tiempo: oferta por expirar, documento por vencer, digest de recaudo y los proactivos de la cola (próximo turno, documento que bloquea, sin elegibles)",
         "operationId": "postJobsAvisos",
         "x-guard": "cola U",
         "security": [
@@ -5031,6 +5034,252 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ResumenAvisos"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error con código estable (spec §8.6): 400 VALIDATION_ERROR, 401, 403, 404, 409 o 422 según el código",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorApi"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/gps/ubicaciones": {
+      "post": {
+        "tags": ["GPS"],
+        "summary": "Ingesta de ubicaciones del agente satélite: idempotente por placa e instante, ignora placas desconocidas y vehículos no activos, y devuelve cada cuántos minutos volver",
+        "operationId": "postGpsUbicaciones",
+        "x-guard": "token de servicio (GPS_INGESTA_TOKEN)",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoteUbicacionesGps"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ResultadoIngestaGps",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultadoIngestaGps"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error con código estable (spec §8.6): 400 VALIDATION_ERROR, 401, 403, 404, 409 o 422 según el código",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorApi"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/vehiculos/ubicaciones": {
+      "get": {
+        "tags": ["GPS"],
+        "summary": "Última ubicación conocida por placa; el asociado solo ve las suyas y el veedor la recibe sin coordenadas",
+        "operationId": "getVehiculosUbicaciones",
+        "x-guard": "vehiculos R (own, R*)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "VistaUbicacion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VistaUbicacion"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error con código estable (spec §8.6): 400 VALIDATION_ERROR, 401, 403, 404, 409 o 422 según el código",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorApi"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/vehiculos/{id}/ubicaciones": {
+      "get": {
+        "tags": ["GPS"],
+        "summary": "Recorrido de una placa (últimas 24 h por defecto); el asociado solo el suyo y el veedor no accede",
+        "operationId": "getVehiculosIdUbicaciones",
+        "x-guard": "vehiculos R (own)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "desde",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            }
+          },
+          {
+            "name": "hasta",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            }
+          },
+          {
+            "name": "limite",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2000
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "VistaUbicacion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VistaUbicacion"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error con código estable (spec §8.6): 400 VALIDATION_ERROR, 401, 403, 404, 409 o 422 según el código",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorApi"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["GPS"],
+        "summary": "Habeas data: borra todo el historial de ubicaciones de una placa, con motivo y re-autenticación (auditado)",
+        "operationId": "deleteVehiculosIdUbicaciones",
+        "x-guard": "vehiculos D",
+        "x-reauth": true,
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Motivo"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SupresionUbicaciones",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupresionUbicaciones"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error con código estable (spec §8.6): 400 VALIDATION_ERROR, 401, 403, 404, 409 o 422 según el código",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorApi"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/purgar-ubicaciones": {
+      "post": {
+        "tags": ["GPS"],
+        "summary": "Purga las ubicaciones anteriores a `gps_retencion_dias` conservando la última de cada placa (auditado)",
+        "operationId": "postJobsPurgarUbicaciones",
+        "x-guard": "cola U",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PurgaUbicaciones",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurgaUbicaciones"
                 }
               }
             }
@@ -5073,6 +5322,7 @@
               "NOT_FOUND",
               "TOTP_NO_ENROLADO",
               "COLA_LOCKED",
+              "CANDIDATO_CAMBIO",
               "EMAIL_EN_USO",
               "PLACA_EN_USO",
               "DOCUMENTO_EN_USO",
@@ -5646,6 +5896,36 @@
           "timezone": {
             "type": "string",
             "minLength": 1
+          },
+          "aviso_proximo_turno_posiciones": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "aviso_documento_bloquea_posiciones": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "gps_intervalo_minutos": {
+            "type": "integer",
+            "minimum": 10,
+            "maximum": 180
+          },
+          "gps_frescura_minutos": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "gps_sin_senal_minutos": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "gps_retencion_dias": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365
           }
         },
         "required": [
@@ -5662,7 +5942,13 @@
           "tr_cancelado_regresa_al_mismo",
           "reset_cola_requiere_2fa",
           "secuencia_tr",
-          "timezone"
+          "timezone",
+          "aviso_proximo_turno_posiciones",
+          "aviso_documento_bloquea_posiciones",
+          "gps_intervalo_minutos",
+          "gps_frescura_minutos",
+          "gps_sin_senal_minutos",
+          "gps_retencion_dias"
         ],
         "additionalProperties": false
       },
@@ -5733,6 +6019,36 @@
           "timezone": {
             "type": "string",
             "minLength": 1
+          },
+          "aviso_proximo_turno_posiciones": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "aviso_documento_bloquea_posiciones": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "gps_intervalo_minutos": {
+            "type": "integer",
+            "minimum": 10,
+            "maximum": 180
+          },
+          "gps_frescura_minutos": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "gps_sin_senal_minutos": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "gps_retencion_dias": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365
           }
         }
       },
@@ -6529,6 +6845,27 @@
                 "motivoBloqueo": {
                   "type": ["string", "null"]
                 },
+                "motivoBloqueoCodigo": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "CURSO_VENCIDO",
+                        "SIN_CERTIFICACION",
+                        "DOCUMENTO_PENDIENTE",
+                        "INSPECCION_RECHAZADA",
+                        "SANCION_CLIENTE",
+                        "OTRO"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "nota": {
+                  "type": ["string", "null"]
+                },
                 "cliente": {
                   "type": ["string", "null"]
                 },
@@ -6542,6 +6879,8 @@
                 "clienteId",
                 "apto",
                 "motivoBloqueo",
+                "motivoBloqueoCodigo",
+                "nota",
                 "cliente",
                 "clienteNombre"
               ],
@@ -6578,6 +6917,70 @@
                 "type": "null"
               }
             ]
+          },
+          "ubicacion": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "vehiculoId": {
+                    "type": "string"
+                  },
+                  "placa": {
+                    "type": "string"
+                  },
+                  "latitud": {
+                    "type": ["number", "null"]
+                  },
+                  "longitud": {
+                    "type": ["number", "null"]
+                  },
+                  "velocidadKmh": {
+                    "type": ["number", "null"]
+                  },
+                  "rumboGrados": {
+                    "type": ["number", "null"]
+                  },
+                  "proveedor": {
+                    "type": "string"
+                  },
+                  "capturadaEn": {
+                    "type": "string"
+                  },
+                  "recibidaEn": {
+                    "type": "string"
+                  },
+                  "minutosDesde": {
+                    "type": "number"
+                  },
+                  "frescura": {
+                    "type": "string",
+                    "enum": ["reciente", "desactualizada", "sin_senal"]
+                  },
+                  "enmascarada": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "vehiculoId",
+                  "placa",
+                  "latitud",
+                  "longitud",
+                  "velocidadKmh",
+                  "rumboGrados",
+                  "proveedor",
+                  "capturadaEn",
+                  "recibidaEn",
+                  "minutosDesde",
+                  "frescura",
+                  "enmascarada"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -6587,7 +6990,8 @@
           "documentos",
           "habilitaciones",
           "semaforo",
-          "enCola"
+          "enCola",
+          "ubicacion"
         ],
         "additionalProperties": false
       },
@@ -6609,6 +7013,27 @@
           "motivoBloqueo": {
             "type": ["string", "null"]
           },
+          "motivoBloqueoCodigo": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "CURSO_VENCIDO",
+                  "SIN_CERTIFICACION",
+                  "DOCUMENTO_PENDIENTE",
+                  "INSPECCION_RECHAZADA",
+                  "SANCION_CLIENTE",
+                  "OTRO"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nota": {
+            "type": ["string", "null"]
+          },
           "cliente": {
             "type": ["string", "null"]
           },
@@ -6622,6 +7047,8 @@
           "clienteId",
           "apto",
           "motivoBloqueo",
+          "motivoBloqueoCodigo",
+          "nota",
           "cliente",
           "clienteNombre"
         ],
@@ -6633,7 +7060,18 @@
           "apto": {
             "type": "boolean"
           },
-          "motivoBloqueo": {
+          "motivoBloqueoCodigo": {
+            "type": "string",
+            "enum": [
+              "CURSO_VENCIDO",
+              "SIN_CERTIFICACION",
+              "DOCUMENTO_PENDIENTE",
+              "INSPECCION_RECHAZADA",
+              "SANCION_CLIENTE",
+              "OTRO"
+            ]
+          },
+          "nota": {
             "type": "string",
             "maxLength": 200
           },
@@ -9612,7 +10050,10 @@
               "tr.asignado",
               "tr.cancelado",
               "documento.por_vencer",
-              "recaudo.pendiente"
+              "recaudo.pendiente",
+              "cola.proximo",
+              "documento.bloquea_turno",
+              "cola.sin_elegibles"
             ]
           },
           "asunto": {
@@ -9703,9 +10144,214 @@
           },
           "recaudos": {
             "type": "boolean"
+          },
+          "proximos": {
+            "type": "number"
+          },
+          "bloqueanTurno": {
+            "type": "number"
+          },
+          "sinElegibles": {
+            "type": "number"
           }
         },
-        "required": ["porExpirar", "documentos", "recaudos"],
+        "required": [
+          "porExpirar",
+          "documentos",
+          "recaudos",
+          "proximos",
+          "bloqueanTurno",
+          "sinElegibles"
+        ],
+        "additionalProperties": false
+      },
+      "ResultadoIngestaGps": {
+        "type": "object",
+        "properties": {
+          "loteId": {
+            "type": "string"
+          },
+          "recibidas": {
+            "type": "number"
+          },
+          "guardadas": {
+            "type": "number"
+          },
+          "duplicadas": {
+            "type": "number"
+          },
+          "ignoradas": {
+            "type": "number"
+          },
+          "vehiculosInactivos": {
+            "type": "number"
+          },
+          "proveedorDistinto": {
+            "type": "number"
+          },
+          "placasDesconocidas": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "intervaloMinutos": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "loteId",
+          "recibidas",
+          "guardadas",
+          "duplicadas",
+          "ignoradas",
+          "vehiculosInactivos",
+          "proveedorDistinto",
+          "placasDesconocidas",
+          "intervaloMinutos"
+        ],
+        "additionalProperties": false
+      },
+      "LoteUbicacionesGps": {
+        "type": "object",
+        "properties": {
+          "loteId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "cuentaId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "ubicaciones": {
+            "maxItems": 500,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "placa": {
+                  "type": "string",
+                  "pattern": "^[A-Z]{3}[0-9]{3}$"
+                },
+                "latitud": {
+                  "type": "number",
+                  "minimum": -90,
+                  "maximum": 90
+                },
+                "longitud": {
+                  "type": "number",
+                  "minimum": -180,
+                  "maximum": 180
+                },
+                "velocidadKmh": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 300
+                },
+                "rumboGrados": {
+                  "type": "number",
+                  "minimum": 0,
+                  "exclusiveMaximum": 360
+                },
+                "capturadaEn": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                },
+                "proveedor": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                }
+              },
+              "required": ["placa", "latitud", "longitud", "capturadaEn", "proveedor"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["loteId", "cuentaId", "ubicaciones"],
+        "additionalProperties": false
+      },
+      "VistaUbicacion": {
+        "type": "object",
+        "properties": {
+          "vehiculoId": {
+            "type": "string"
+          },
+          "placa": {
+            "type": "string"
+          },
+          "latitud": {
+            "type": ["number", "null"]
+          },
+          "longitud": {
+            "type": ["number", "null"]
+          },
+          "velocidadKmh": {
+            "type": ["number", "null"]
+          },
+          "rumboGrados": {
+            "type": ["number", "null"]
+          },
+          "proveedor": {
+            "type": "string"
+          },
+          "capturadaEn": {
+            "type": "string"
+          },
+          "recibidaEn": {
+            "type": "string"
+          },
+          "minutosDesde": {
+            "type": "number"
+          },
+          "frescura": {
+            "type": "string",
+            "enum": ["reciente", "desactualizada", "sin_senal"]
+          },
+          "enmascarada": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "vehiculoId",
+          "placa",
+          "latitud",
+          "longitud",
+          "velocidadKmh",
+          "rumboGrados",
+          "proveedor",
+          "capturadaEn",
+          "recibidaEn",
+          "minutosDesde",
+          "frescura",
+          "enmascarada"
+        ],
+        "additionalProperties": false
+      },
+      "SupresionUbicaciones": {
+        "type": "object",
+        "properties": {
+          "borradas": {
+            "type": "number"
+          }
+        },
+        "required": ["borradas"],
+        "additionalProperties": false
+      },
+      "PurgaUbicaciones": {
+        "type": "object",
+        "properties": {
+          "borradas": {
+            "type": "number"
+          },
+          "corte": {
+            "type": "string"
+          }
+        },
+        "required": ["borradas", "corte"],
         "additionalProperties": false
       }
     }

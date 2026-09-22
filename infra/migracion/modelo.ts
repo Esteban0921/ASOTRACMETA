@@ -1,4 +1,9 @@
-import { claseColaDe, type ClaseCola, type ClaseVehiculo } from '@asotracmet/shared';
+import {
+  claseColaDe,
+  type ClaseCola,
+  type ClaseVehiculo,
+  type CodigoMotivoBloqueo,
+} from '@asotracmet/shared';
 import {
   claseDe,
   esCorreo,
@@ -128,7 +133,10 @@ export interface PlanHabilitacion {
   placa: string;
   cliente: string;
   apto: boolean;
-  motivoBloqueo: string | null;
+  /** Catálogo cerrado (TASK-0059): las marcas NA/NO del TURNERO entran como `OTRO`. */
+  motivoBloqueoCodigo: CodigoMotivoBloqueo | null;
+  /** La marca original del TURNERO, como nota interna de HSEQ. */
+  nota: string | null;
   requisitos: Record<string, string>;
 }
 
@@ -823,12 +831,19 @@ class Constructor {
         }
         const presentes = marcas.filter((m): m is Marca => m !== null);
         const apto = presentes.every((m) => m === 'X' || m === 'SI');
-        const motivoBloqueo = apto
+        const nota = apto
           ? null
           : presentes.includes('NO')
             ? 'Marcado NO en el TURNERO legado'
             : 'NA en el TURNERO legado (no cumple antigüedad/modelo exigido)';
-        this.habilitaciones.push({ placa, cliente, apto, motivoBloqueo, requisitos });
+        this.habilitaciones.push({
+          placa,
+          cliente,
+          apto,
+          motivoBloqueoCodigo: apto ? null : 'OTRO',
+          nota,
+          requisitos,
+        });
       }
       if (sinDato > 0) {
         this.excepcion(

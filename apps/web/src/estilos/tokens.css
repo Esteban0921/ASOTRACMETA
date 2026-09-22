@@ -1,0 +1,279 @@
+/*
+ * Tokens del sistema de diseño "Llano Abierto" (docs/ui/brief-diseno-llano-abierto.md §1, TASK-0044).
+ *
+ * Papel cálido en vez de gris de dashboard, verde profundo del morichal como familia tonal y ocre de
+ * amanecer como acento. El color solo significa estado (spec §9.3): ámbar = oferta abierta,
+ * verde = TR asignado / elegible, rojo = cancelado, declinado o intervención, gris = no habilitado;
+ * la cabeza elegible se marca con `marca`, nunca con verde.
+ *
+ * Los pares texto/fondo se verifican en tokens.test.ts (WCAG 2.x, ≥ 4,5:1; `--texto-3` ≥ 3:1 porque
+ * solo se usa a ≥ 18 px). Los sólidos ámbar (#D98324) y verde oscuro (#2F9E63) no alcanzan 4,5:1 con
+ * blanco, por eso cada sólido declara su propio `-solido-texto`.
+ *
+ * El bloque oscuro aparece dos veces a propósito (preferencia del sistema y elección explícita del
+ * usuario en `data-tema`); el test comprueba que ambos bloques son idénticos.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* Superficies */
+  --fondo: #f5f4ef;
+  --superficie: #ffffff;
+  --superficie-2: #eef1ee;
+  --borde: #dcdfda;
+  --borde-fuerte: #b9c0bc;
+
+  /* Texto */
+  --texto: #1a2321;
+  --texto-2: #4f605e;
+  --texto-3: #6f807d;
+
+  /* Marca (igual en ambos modos: la cabecera y la futura sidebar viven sobre marca) */
+  --marca-900: #0a2b2c;
+  --marca-800: #0f3d3e;
+  --marca-700: #16514e;
+  --marca-600: #215b53;
+  --marca-500: #2e7469;
+  --marca-300: #79b1a9;
+  --marca-100: #d2e6e2;
+  --marca-50: #eaf3f1;
+  --sobre-marca: #f5f4ef;
+  --sobre-marca-2: #a9c4c0;
+  --cabecera-fondo: var(--marca-800);
+
+  /* Acción */
+  --accion: var(--marca-700);
+  --accion-hover: var(--marca-800);
+  --accion-texto: #ffffff;
+  --enlace: var(--marca-600);
+
+  /* Tonos de estado: texto / fondo / borde / sólido (+ texto sobre el sólido) */
+  --ambar-texto: #7a4b00;
+  --ambar-fondo: #fff4dc;
+  --ambar-borde: #f0b64a;
+  --ambar-solido: #d98324;
+  --ambar-solido-texto: #1a2321;
+  --verde-texto: #14532d;
+  --verde-fondo: #e3f5ea;
+  --verde-borde: #4cb27a;
+  --verde-solido: #1f7a4d;
+  --verde-solido-texto: #ffffff;
+  --rojo-texto: #8a1c12;
+  --rojo-fondo: #fde8e6;
+  --rojo-borde: #e5675b;
+  --rojo-solido: #b42318;
+  --rojo-solido-texto: #ffffff;
+  --gris-texto: #475552;
+  --gris-fondo: #eef1f0;
+  --gris-borde: #b8c2bf;
+  --gris-solido: #6b7280;
+  --gris-solido-texto: #ffffff;
+  --info-texto: #1e3a8a;
+  --info-fondo: #e8f0fe;
+  --info-borde: #5b8def;
+  --info-solido: #3b6fd1;
+  --info-solido-texto: #ffffff;
+  --marca-texto: var(--marca-800);
+  --marca-fondo: var(--marca-50);
+  --marca-borde: var(--marca-300);
+  --marca-solido: var(--marca-500);
+  --marca-solido-texto: #ffffff;
+
+  /* Foco (sobre marca pasa a ocre: .cabecera-marca y .sidebar lo redefinen) */
+  --foco: #2f6fed;
+  --foco-sobre-marca: #f2b266;
+
+  /* Espaciado en múltiplos de 4 px */
+  --e-1: 4px;
+  --e-2: 8px;
+  --e-3: 12px;
+  --e-4: 16px;
+  --e-5: 20px;
+  --e-6: 24px;
+  --e-8: 32px;
+  --e-10: 40px;
+  --e-12: 48px;
+
+  /* Anchos de lectura */
+  --ancho-lectura: 720px;
+  --ancho-admin: 960px;
+  --ancho-max: 1440px;
+
+  /* Radios */
+  --r-s: 6px;
+  --r-m: 10px;
+  --r-l: 14px;
+  --r-xl: 20px;
+  --r-pill: 999px;
+
+  /* Sombras (solo en claro; en oscuro las sustituye un borde fuerte + brillo interior) */
+  --sombra-1: 0 1px 2px rgb(16 32 31 / 0.06);
+  --sombra-2: 0 4px 12px rgb(16 32 31 / 0.08);
+  --sombra-3: 0 12px 32px rgb(16 32 31 / 0.16);
+
+  /* Movimiento discreto */
+  --dur-1: 120ms;
+  --dur-2: 200ms;
+  --dur-3: 320ms;
+  --curva: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* Capas */
+  --z-sticky: 10;
+  --z-nav: 20;
+  --z-dialogo: 40;
+  --z-toast: 50;
+
+  /* Tipografía: una sola familia (Inter Variable autohospedada, base.css) */
+  --fuente:
+    'Inter Variable', 'Segoe UI Respaldo', 'Roboto Respaldo', system-ui, -apple-system, 'Segoe UI',
+    Roboto, sans-serif;
+  --t-xs: 12px;
+  --lh-xs: 16px;
+  --t-sm: 13px;
+  --lh-sm: 18px;
+  --t-md: 14px;
+  --lh-md: 20px;
+  --t-base: 16px;
+  --lh-base: 24px;
+  --t-lg: 18px;
+  --lh-lg: 26px;
+  --t-xl: 22px;
+  --lh-xl: 28px;
+  --t-2xl: 28px;
+  --lh-2xl: 34px;
+  --t-3xl: 36px;
+  --lh-3xl: 40px;
+  --t-display: clamp(56px, 40px + 5vw, 80px);
+  --lh-display: 1;
+
+  /* Densidad por defecto (login, sin sesión): bolsillo, porque llega desde el celular */
+  --t-cuerpo: var(--t-base);
+  --lh-cuerpo: var(--lh-base);
+  --alto-control: 48px;
+  --alto-fila: 48px;
+  --objetivo: 48px;
+}
+
+/* Densidades (brief §1): operación en /ops, /hseq, /finance, /admin*, /tablero; bolsillo en /me y /notificaciones */
+:root[data-densidad='operacion'] {
+  --t-cuerpo: var(--t-md);
+  --lh-cuerpo: var(--lh-md);
+  --alto-control: 40px;
+  --alto-fila: 40px;
+  --objetivo: 44px;
+}
+
+:root[data-densidad='bolsillo'] {
+  --t-cuerpo: var(--t-base);
+  --lh-cuerpo: var(--lh-base);
+  --alto-control: 48px;
+  --alto-fila: 48px;
+  --objetivo: 48px;
+}
+
+/* Modo oscuro por preferencia del sistema, salvo que el usuario haya elegido claro */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema='claro']) {
+    --fondo: #0e1514;
+    --superficie: #162020;
+    --superficie-2: #1c2827;
+    --borde: #263331;
+    --borde-fuerte: #3b4c48;
+    --texto: #e8edeb;
+    --texto-2: #9fb0ad;
+    --texto-3: #8a9997;
+    --cabecera-fondo: var(--marca-900);
+    --accion: #2e7469;
+    --accion-hover: #215b53;
+    --accion-texto: #f5f4ef;
+    --enlace: #7fc3b8;
+    --ambar-texto: #ffd48a;
+    --ambar-fondo: #3a2a0a;
+    --ambar-borde: #b7791f;
+    --ambar-solido: #d98324;
+    --ambar-solido-texto: #1a2321;
+    --verde-texto: #9ee6bc;
+    --verde-fondo: #0f2e1d;
+    --verde-borde: #2f9e63;
+    --verde-solido: #2f9e63;
+    --verde-solido-texto: #0e1514;
+    --rojo-texto: #ffb4ac;
+    --rojo-fondo: #3b1512;
+    --rojo-borde: #c43d30;
+    --rojo-solido: #c43d30;
+    --rojo-solido-texto: #ffffff;
+    --gris-texto: #aebcb9;
+    --gris-fondo: #1f2a28;
+    --gris-borde: #4a5956;
+    --gris-solido: #6b7280;
+    --gris-solido-texto: #ffffff;
+    --info-texto: #bfd3ff;
+    --info-fondo: #10203a;
+    --info-borde: #3b6fd1;
+    --info-solido: #3b6fd1;
+    --info-solido-texto: #ffffff;
+    --marca-texto: var(--marca-300);
+    --marca-fondo: #14302f;
+    --marca-borde: var(--marca-600);
+    --marca-solido: var(--marca-500);
+    --marca-solido-texto: #ffffff;
+    --foco: #f2b266;
+    --foco-sobre-marca: #f2b266;
+    --sombra-1: 0 0 0 1px var(--borde-fuerte), inset 0 1px 0 rgb(255 255 255 / 0.04);
+    --sombra-2: 0 0 0 1px var(--borde-fuerte), inset 0 1px 0 rgb(255 255 255 / 0.04);
+    --sombra-3: 0 0 0 1px var(--borde-fuerte), inset 0 1px 0 rgb(255 255 255 / 0.04);
+  }
+}
+
+/* Modo oscuro elegido por el usuario (SelectorTema guarda data-tema en localStorage) */
+:root[data-tema='oscuro'] {
+  --fondo: #0e1514;
+  --superficie: #162020;
+  --superficie-2: #1c2827;
+  --borde: #263331;
+  --borde-fuerte: #3b4c48;
+  --texto: #e8edeb;
+  --texto-2: #9fb0ad;
+  --texto-3: #8a9997;
+  --cabecera-fondo: var(--marca-900);
+  --accion: #2e7469;
+  --accion-hover: #215b53;
+  --accion-texto: #f5f4ef;
+  --enlace: #7fc3b8;
+  --ambar-texto: #ffd48a;
+  --ambar-fondo: #3a2a0a;
+  --ambar-borde: #b7791f;
+  --ambar-solido: #d98324;
+  --ambar-solido-texto: #1a2321;
+  --verde-texto: #9ee6bc;
+  --verde-fondo: #0f2e1d;
+  --verde-borde: #2f9e63;
+  --verde-solido: #2f9e63;
+  --verde-solido-texto: #0e1514;
+  --rojo-texto: #ffb4ac;
+  --rojo-fondo: #3b1512;
+  --rojo-borde: #c43d30;
+  --rojo-solido: #c43d30;
+  --rojo-solido-texto: #ffffff;
+  --gris-texto: #aebcb9;
+  --gris-fondo: #1f2a28;
+  --gris-borde: #4a5956;
+  --gris-solido: #6b7280;
+  --gris-solido-texto: #ffffff;
+  --info-texto: #bfd3ff;
+  --info-fondo: #10203a;
+  --info-borde: #3b6fd1;
+  --info-solido: #3b6fd1;
+  --info-solido-texto: #ffffff;
+  --marca-texto: var(--marca-300);
+  --marca-fondo: #14302f;
+  --marca-borde: var(--marca-600);
+  --marca-solido: var(--marca-500);
+  --marca-solido-texto: #ffffff;
+  --foco: #f2b266;
+  --foco-sobre-marca: #f2b266;
+  --sombra-1: 0 0 0 1px var(--borde-fuerte), inset 0 1px 0 rgb(255 255 255 / 0.04);
+  --sombra-2: 0 0 0 1px var(--borde-fuerte), inset 0 1px 0 rgb(255 255 255 / 0.04);
+  --sombra-3: 0 0 0 1px var(--borde-fuerte), inset 0 1px 0 rgb(255 255 255 / 0.04);
+}

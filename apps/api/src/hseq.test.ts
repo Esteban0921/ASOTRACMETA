@@ -200,3 +200,159 @@ describe('alertas de vencimiento y job nocturno (spec §9.2 HSEQ, §14)', () => 
     expect(negado.statusCode).toBe(403);
   });
 });
+
+interface FilaCola {
+  placa: string;
+  elegibilidad: { elegible: boolean; motivo: string | null; detalle: string | null };
+}
+
+async function filaDeCola(token: string, placa: string): Promise<FilaCola | undefined> {
+  const res = await app.inject({
+    method: 'GET',
+    url: '/api/v1/colas/TM-CBZ?clienteId=cli-hlb',
+    headers: conToken(token),
+  });
+  expect(res.statusCode, res.body).toBe(200);
+  const cola = res.json() as { posiciones: FilaCola[] };
+  expect(JSON.stringify(cola)).not.toMatch(/médico|examen/);
+  return cola.posiciones.find((p) => p.placa === placa);
+}
+
+// Catálogo cerrado de motivos de bloqueo (spec §6.3, §12; TASK-0059): el texto libre se fue, la
+// nota de HSEQ es interna y la cola (y por tanto el acta de turno) solo ve el nombre del catálogo.
+describe('catálogo de motivos de bloqueo (spec §6.3, §12)', () => {
+  const url = '/api/v1/vehiculos/veh-FST189/habilitaciones/cli-hlb';
+
+  it('no apta exige código del catálogo; la vista trae código, nombre y nota; la cola solo el nombre', async () => {
+    const hseq = await login('hseq@asotracmet.test');
+    for (const payload of [
+      { apto: false },
+      { apto: false, nota: 'sin curso' },
+      { apto: false, motivoBloqueo: 'Curso HLB vencido' },
+      { apto: false, motivoBloqueoCodigo: 'CURSO_HLB' },
+      { apto: false, motivoBloqueoCodigo: 'OTRO' },
+    ]) {
+      const res = await app.inject({ method: 'PUT', url, headers: conToken(hseq), payload });
+      expect(res.statusCode, JSON.stringify(payload)).toBe(400);
+      expect((res.json() as { code: string }).code).toBe('VALIDATION_ERROR');
+    }
+
+    const bloqueo = await app.inject({
+      method: 'PUT',
+      url,
+      headers: conToken(hseq),
+      payload: {
+        apto: false,
+        motivoBloqueoCodigo: 'CURSO_VENCIDO',
+        nota: 'examen médico del conductor pendiente',
+      },
+    });
+    expect(bloqueo.statusCode, bloqueo.body).toBe(200);
+    expect(bloqueo.json()).toMatchObject({
+      apto: false,
+      cliente: 'HLB',
+      motivoBloqueoCodigo: 'CURSO_VENCIDO',
+      motivoBloqueo: 'Curso del cliente vencido',
+      nota: 'examen médico del conductor pendiente',
+    });
+    const ficha = await app.inject({
+      method: 'GET',
+      url: '/api/v1/vehiculos/veh-FST189/ficha',
+      headers: conToken(hseq),
+    });
+    const habilitacion = (
+      ficha.json() as { habilitaciones: Array<{ clienteId: string; nota: string | null }> }
+    ).habilitaciones.find((h) => h.clienteId === 'cli-hlb');
+    expect(habilitacion).toMatchObject({
+      motivoBloqueoCodigo: 'CURSO_VENCIDO',
+      nota: 'examen médico del conductor pendiente',
+    });
+
+    // La cola (lo que lee el acta de turno) lleva el nombre del catálogo y nunca la nota.
+    const ops = await login('ops@asotracmet.test');
+    expect((await filaDeCola(ops, 'FST189'))?.elegibilidad).toEqual({
+      elegible: false,
+      motivo: 'VEHICULO_NO_HABILITADO',
+      detalle: 'FST189 no apta para HLB (Curso del cliente vencido)',
+    });
+    // La semilla también viene del catálogo: SPS413 no está habilitada con HLB.
+    expect((await filaDeCola(ops, 'SPS413'))?.elegibilidad.detalle).toBe(
+      'SPS413 no apta para HLB (Curso del cliente vencido)',
+    );
+
+    // Volver a apta limpia código, nombre y nota; "OTRO" con nota sí vale.
+    const apta = await app.inject({
+      method: 'PUT',
+      url,
+      headers: conToken(hseq),
+      payload: { apto: true },
+    });
+    expect(apta.statusCode, apta.body).toBe(200);
+    expect(apta.json()).toMatchObject({
+      apto: true,
+      motivoBloqueoCodigo: null,
+      motivoBloqueo: null,
+      nota: null,
+    });
+    expect((await filaDeCola(ops, 'FST189'))?.elegibilidad.elegible).toBe(true);
+    const otro = await app.inject({
+      method: 'PUT',
+      url,
+      headers: conToken(hseq),
+      payload: { apto: false, motivoBloqueoCodigo: 'OTRO', nota: 'Pendiente visita del cliente' },
+    });
+    expect(otro.statusCode, otro.body).toBe(200);
+    expect((await filaDeCola(ops, 'FST189'))?.elegibilidad.detalle).toBe(
+      'FST189 no apta para HLB (Otro motivo (ver nota))',
+    );
+  });
+
+  it('un documento vencido del conductor no cuesta el turno de la placa: solo cuentan los del vehículo', async () => {
+    const hseq = await login('hseq@asotracmet.test');
+    const tipos = (
+      await app.inject({ method: 'GET', url: '/api/v1/tipos-documento', headers: conToken(hseq) })
+    ).json() as Array<{ id: string; codigo: string }>;
+    const licencia = tipos.find((t) => t.codigo === 'LICENCIA')!;
+    const soat = tipos.find((t) => t.codigo === 'SOAT')!;
+    // con-01 es el conductor principal de FST189 y su licencia está vencida y es bloqueante.
+    const delConductor = await app.inject({
+      method: 'POST',
+      url: '/api/v1/documentos',
+      headers: conToken(hseq),
+      payload: {
+        sujetoTipo: 'conductor',
+        sujetoId: 'con-01',
+        tipoId: licencia.id,
+        venceEn: '2026-09-01',
+      },
+    });
+    expect(delConductor.statusCode, delConductor.body).toBe(201);
+    expect(delConductor.json()).toMatchObject({ estado: 'vencido' });
+
+    const ops = await login('ops@asotracmet.test');
+    expect((await filaDeCola(ops, 'FST189'))?.elegibilidad).toEqual({
+      elegible: true,
+      motivo: null,
+      detalle: null,
+    });
+
+    // Un documento del vehículo sí, y el detalle nombra solo ese tipo.
+    const delVehiculo = await app.inject({
+      method: 'POST',
+      url: '/api/v1/documentos',
+      headers: conToken(hseq),
+      payload: {
+        sujetoTipo: 'vehiculo',
+        sujetoId: 'veh-FST189',
+        tipoId: soat.id,
+        venceEn: '2026-09-01',
+      },
+    });
+    expect(delVehiculo.statusCode, delVehiculo.body).toBe(201);
+    expect((await filaDeCola(ops, 'FST189'))?.elegibilidad).toEqual({
+      elegible: false,
+      motivo: 'DOCUMENTO_VENCIDO',
+      detalle: 'FST189 con documento vencido: SOAT',
+    });
+  });
+});

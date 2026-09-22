@@ -503,9 +503,14 @@ describe('construirPlan sobre un libro sintético con la forma del Excel real', 
       plan.habilitaciones.find((h) => h.placa === placa && h.cliente === cliente);
     expect(hab('SWI750', 'HLB')?.apto).toBe(true);
     expect(hab('SWI750', 'GEOPARK')?.apto).toBe(false);
-    expect(hab('SWI750', 'GEOPARK')?.motivoBloqueo).toMatch(/NA/);
+    // Catálogo cerrado (TASK-0059): la marca del TURNERO queda como nota bajo OTRO.
+    expect(hab('SWI750', 'GEOPARK')?.motivoBloqueoCodigo).toBe('OTRO');
+    expect(hab('SWI750', 'GEOPARK')?.nota).toMatch(/NA/);
     expect(hab('QJM003', 'TENARIS')?.apto).toBe(false);
-    expect(hab('QJM003', 'TENARIS')?.motivoBloqueo).toMatch(/NO/);
+    expect(hab('QJM003', 'TENARIS')?.motivoBloqueoCodigo).toBe('OTRO');
+    expect(hab('QJM003', 'TENARIS')?.nota).toMatch(/NO/);
+    expect(hab('SWI750', 'HLB')?.motivoBloqueoCodigo).toBeNull();
+    expect(hab('SWI750', 'HLB')?.nota).toBeNull();
     expect(hab('QJM003', 'SLB')).toBeUndefined(); // sin marca: sin fila
     expect(hab('SWI750', 'HLB')?.requisitos.OBSERVACIONES).toBe('DISPONIBLE');
     expect(plan.documentos).toContainEqual({

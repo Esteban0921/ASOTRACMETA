@@ -7,7 +7,12 @@ import {
   type ClaseCola,
   type Parametros,
 } from '@asotracmet/shared';
-import { evaluarElegibilidad } from './elegibilidad.js';
+import {
+  evaluarCola,
+  evaluarElegibilidad,
+  firmaCola,
+  type ContextoElegibilidad,
+} from './elegibilidad.js';
 import { ErrorDominio } from './errores.js';
 import {
   actualizarPosicion,
@@ -20,12 +25,16 @@ import {
 import type { GeneradorIds, Reloj, Transaccion, UnidadDeTrabajo } from './puertos.js';
 import type {
   Actor,
+  Cliente,
   ColaPosicion,
+  Descarte,
+  EsperadoOferta,
   Oferta,
   PosicionCola,
   Requerimiento,
   Tr,
   Vehiculo,
+  VistaPrevia,
 } from './tipos.js';
 
 export interface DependenciasMotor {
@@ -37,6 +46,23 @@ export interface DependenciasMotor {
 interface Candidato {
   posicion: ColaPosicion;
   vehiculo: Vehiculo;
+}
+
+/** La cola de una clase con todo lo que los filtros de §7.2 necesitan, cargada una sola vez. */
+interface FilasCola {
+  parametros: Parametros;
+  cliente: Cliente | null;
+  posiciones: ColaPosicion[];
+  filas: ContextoElegibilidad[];
+}
+
+/** Lo que el acta de turno (brief §5) guarda de cada oferta además de la oferta misma. */
+interface ActaOferta {
+  /** Posición que tenía la elegida al ofrecer; `null` solo si la placa ya no está en la cola. */
+  posicionElegida: number | null;
+  descartes: Descarte[];
+  firma: string;
+  clienteCodigo: string | null;
 }
 
 /**
@@ -57,41 +83,73 @@ export class MotorCola {
   /** Snapshot de una clase con elegibilidad calculada (para `GET /colas/:clase`). Solo lectura. */
   async snapshotCola(claseCola: ClaseCola, clienteId?: string): Promise<PosicionCola[]> {
     return this.uow.leer(async (tx) => {
-      const parametros = await tx.parametros();
-      const ahora = this.reloj.ahora();
-      const cliente = clienteId ? ((await tx.cliente(clienteId)) ?? null) : null;
-      const posiciones = await tx.posiciones(claseCola);
+      const { filas } = await this.filasDeCola(tx, claseCola, clienteId);
       const resultado: PosicionCola[] = [];
-      for (const posicion of posiciones) {
-        const vehiculo = await tx.vehiculo(posicion.vehiculoId);
-        if (!vehiculo) continue;
-        const asociado = (await tx.asociado(vehiculo.asociadoId)) ?? null;
-        const elegibilidad = evaluarElegibilidad({
-          posicion,
-          vehiculo,
-          cliente,
-          habilitacion: cliente ? await tx.habilitacion(vehiculo.id, cliente.id) : undefined,
-          documentosVencidos: await tx.documentosBloqueantesVencidos(
-            vehiculo.id,
-            fechaLocal(ahora, parametros.timezone),
-          ),
-          ofertasAbiertas: await tx.ofertasAbiertasDeVehiculo(vehiculo.id),
-          trsActivos: await tx.trsActivosDeVehiculo(vehiculo.id),
-          parametros,
-          ahora,
+      for (const fila of filas) {
+        const asociado = (await tx.asociado(fila.vehiculo.asociadoId)) ?? null;
+        resultado.push({
+          ...fila.posicion,
+          vehiculo: fila.vehiculo,
+          asociado,
+          elegibilidad: evaluarElegibilidad(fila),
         });
-        resultado.push({ ...posicion, vehiculo, asociado, elegibilidad });
       }
       return resultado;
     });
   }
 
-  /** `POST /requerimientos/:id/ofertas` (§7.3). No avanza la cola; se avanza al resolver. */
-  async ofrecer(input: { requerimientoId: string; actor: Actor }): Promise<Oferta> {
+  /**
+   * Vista previa del acta de turno (brief §5): quién saldría para este requerimiento y a quién se
+   * saltaría, sin lock ni efectos (ni saltos consumidos, ni audit, ni outbox). La sala la ve antes
+   * de ofrecer y devuelve `firma` + `vehiculoId` como `esperado`; el motor lo verifica al ofrecer
+   * (RULE-010: el frontend afirma lo que vio, el motor decide). `actor` viaja por simetría con
+   * `ofrecer`; el alcance lo aplica la ruta (no es una vista para `member`: bajo RLS vería solo
+   * sus placas y la cola quedaría incompleta).
+   */
+  async previsualizarOferta(input: {
+    requerimientoId: string;
+    actor: Actor;
+  }): Promise<VistaPrevia> {
+    return this.uow.leer(async (tx) => {
+      const requerimiento = await this.requerimientoAbierto(tx, input.requerimientoId);
+      const { disponibles } = await this.cuposDisponibles(tx, requerimiento);
+      const { candidato, descartes, firma } = await this.evaluarSiguiente(
+        tx,
+        requerimiento.claseCola,
+        requerimiento.clienteId,
+      );
+      return {
+        candidato: candidato
+          ? {
+              vehiculoId: candidato.vehiculo.id,
+              placa: candidato.vehiculo.placa,
+              asociadoId: candidato.vehiculo.asociadoId,
+              posicion: candidato.posicion.posicion,
+            }
+          : null,
+        descartes,
+        firma,
+        cuposDisponibles: Math.max(disponibles, 0),
+        claseCola: requerimiento.claseCola,
+        clienteId: requerimiento.clienteId,
+      };
+    });
+  }
+
+  /**
+   * `POST /requerimientos/:id/ofertas` (§7.3). No avanza la cola; se avanza al resolver.
+   * Con `esperado` (acta de turno, brief §5) el coordinador afirma la placa y la firma que vio en
+   * la vista previa: si la cola cambió, `CANDIDATO_CAMBIO` y el rollback garantiza cero efectos.
+   */
+  async ofrecer(input: {
+    requerimientoId: string;
+    actor: Actor;
+    esperado?: EsperadoOferta;
+  }): Promise<Oferta> {
     const claseCola = await this.claseColaDeRequerimiento(input.requerimientoId);
     return this.uow.ejecutar(claseCola, async (tx) => {
       const requerimiento = await this.requerimientoAbierto(tx, input.requerimientoId);
-      return this.ofrecerEnTx(tx, requerimiento, input.actor);
+      return this.ofrecerEnTx(tx, requerimiento, input.actor, input.esperado);
     });
   }
 
@@ -304,6 +362,8 @@ export class MotorCola {
               if (requerimiento?.estado === 'abierto')
                 await this.intentarOfrecer(tx, requerimiento, actor);
             } else if (requerimiento?.estado === 'abierto') {
+              // Política `reofertar`: nueva oferta a la misma placa sin evaluar la cola, así que
+              // el acta no lleva saltadas (nadie quedó por delante de ella).
               await this.crearOferta(
                 tx,
                 requerimiento,
@@ -311,6 +371,7 @@ export class MotorCola {
                 oferta.asociadoId,
                 actor,
                 parametros,
+                await this.actaReoferta(tx, requerimiento, oferta.vehiculoId),
               );
             }
           }
@@ -640,28 +701,24 @@ export class MotorCola {
   // ---------------------------------------------------------------------------
 
   /**
-   * Algoritmo `siguienteElegible(clase, cliente)` (§7.2).
-   * Una placa penalizada (`penaliza_n`) consume un salto solo cuando el turno se lo lleva otra.
-   * Si nadie más puede tomarlo, la penalizada lo recibe y consume el salto: la cola nunca se traba sola.
+   * Carga la cola de una clase con el contexto de los filtros de §7.2 para todas sus posiciones.
+   * Es la única lectura que hacen el snapshot, la vista previa y la oferta: no hay dos lógicas.
    */
-  private async siguienteElegible(
+  private async filasDeCola(
     tx: Transaccion,
     claseCola: ClaseCola,
-    clienteId: string,
-    actor: Actor,
-  ): Promise<Candidato> {
+    clienteId: string | undefined,
+  ): Promise<FilasCola> {
     const parametros = await tx.parametros();
     const ahora = this.reloj.ahora();
     const hoy = fechaLocal(ahora, parametros.timezone);
-    const cliente = (await tx.cliente(clienteId)) ?? null;
+    const cliente = clienteId ? ((await tx.cliente(clienteId)) ?? null) : null;
     const posiciones = await tx.posiciones(claseCola);
-    const descartes: Record<string, string> = {};
-    const penalizadas: Candidato[] = [];
-
+    const filas: ContextoElegibilidad[] = [];
     for (const posicion of posiciones) {
       const vehiculo = await tx.vehiculo(posicion.vehiculoId);
       if (!vehiculo) continue;
-      const elegibilidad = evaluarElegibilidad({
+      filas.push({
         posicion,
         vehiculo,
         cliente,
@@ -672,28 +729,69 @@ export class MotorCola {
         parametros,
         ahora,
       });
-      if (elegibilidad.elegible) {
-        await this.consumirSaltos(tx, claseCola, posiciones, penalizadas, actor);
-        return { posicion, vehiculo };
-      }
-      descartes[vehiculo.placa] = elegibilidad.motivo ?? 'desconocido';
-      if (elegibilidad.motivo === 'PENALIZACION_PENDIENTE')
-        penalizadas.push({ posicion, vehiculo });
     }
+    return { parametros, cliente, posiciones, filas };
+  }
 
-    const [primeraPenalizada] = penalizadas;
-    if (primeraPenalizada) {
-      await this.consumirSaltos(
-        tx,
-        claseCola,
-        posiciones,
-        [primeraPenalizada],
-        actor,
-        'cola.penalizacion_agotada',
-      );
-      return primeraPenalizada;
+  /** `evaluarCola` + `firmaCola` sobre la clase, sin efectos. Lo comparten vista previa y oferta. */
+  private async evaluarSiguiente(
+    tx: Transaccion,
+    claseCola: ClaseCola,
+    clienteId: string,
+  ): Promise<FilasCola & ReturnType<typeof evaluarCola> & { firma: string }> {
+    const cola = await this.filasDeCola(tx, claseCola, clienteId);
+    return { ...cola, ...evaluarCola(cola.filas), firma: firmaCola(cola.filas) };
+  }
+
+  /**
+   * Algoritmo `siguienteElegible(clase, cliente)` (§7.2) como acta de turno (brief §5): devuelve
+   * la elegida, las saltadas con su motivo y la firma de la cola. Si el coordinador afirma lo que
+   * vio (`esperado`) y ya no coincide, lanza `CANDIDATO_CAMBIO` ANTES de consumir saltos o auditar:
+   * el rollback de la transacción deja cero efectos. Una placa penalizada (`penaliza_n`) consume
+   * un salto solo cuando el turno se lo lleva otra; si nadie más puede tomarlo, la penalizada lo
+   * recibe y consume el salto (`cola.penalizacion_agotada`): la cola nunca se traba sola.
+   */
+  private async siguienteElegible(
+    tx: Transaccion,
+    claseCola: ClaseCola,
+    clienteId: string,
+    actor: Actor,
+    esperado?: EsperadoOferta,
+  ): Promise<{
+    candidato: ContextoElegibilidad;
+    descartes: Descarte[];
+    firma: string;
+    cliente: Cliente | null;
+    parametros: Parametros;
+  }> {
+    const { candidato, descartes, penalizadas, firma, posiciones, cliente, parametros } =
+      await this.evaluarSiguiente(tx, claseCola, clienteId);
+    if (!candidato) {
+      throw new ErrorDominio('COLA_VACIA', `Sin placa elegible en ${claseCola}`, { descartes });
     }
-    throw new ErrorDominio('COLA_VACIA', `Sin placa elegible en ${claseCola}`, { descartes });
+    if (esperado && (esperado.vehiculoId !== candidato.vehiculo.id || esperado.firma !== firma)) {
+      throw new ErrorDominio('CANDIDATO_CAMBIO', 'La cola cambió desde la vista previa', {
+        esperado: { vehiculoId: esperado.vehiculoId, firma: esperado.firma },
+        actual: {
+          vehiculoId: candidato.vehiculo.id,
+          placa: candidato.vehiculo.placa,
+          posicion: candidato.posicion.posicion,
+        },
+        firma,
+      });
+    }
+    // Una elegible de verdad tiene saltosPendientes = 0 (filtro 7); si el candidato los tiene,
+    // es la penalizada que recibe el turno porque nadie más podía.
+    const agotada = candidato.posicion.saltosPendientes > 0;
+    await this.consumirSaltos(
+      tx,
+      claseCola,
+      posiciones,
+      penalizadas,
+      actor,
+      agotada ? 'cola.penalizacion_agotada' : 'cola.penalizacion_consumida',
+    );
+    return { candidato, descartes, firma, cliente, parametros };
   }
 
   private async consumirSaltos(
@@ -702,7 +800,7 @@ export class MotorCola {
     posiciones: ColaPosicion[],
     penalizadas: Candidato[],
     actor: Actor,
-    accion = 'cola.penalizacion_consumida',
+    accion: string,
   ): Promise<void> {
     if (penalizadas.length === 0) return;
     let actualizadas = posiciones;
@@ -729,27 +827,40 @@ export class MotorCola {
     });
   }
 
+  /** Cupos libres = cantidad − TR vigentes − ofertas abiertas (§7.3). */
+  private async cuposDisponibles(
+    tx: Transaccion,
+    requerimiento: Requerimiento,
+  ): Promise<{ disponibles: number; asignados: number; ofertasAbiertas: number }> {
+    const vigentes = await tx.trsVigentesDeRequerimiento(requerimiento.id);
+    const abiertas = await tx.ofertasAbiertasDeRequerimiento(requerimiento.id);
+    return {
+      disponibles: requerimiento.cantidadCupos - vigentes.length - abiertas.length,
+      asignados: vigentes.length,
+      ofertasAbiertas: abiertas.length,
+    };
+  }
+
   private async ofrecerEnTx(
     tx: Transaccion,
     requerimiento: Requerimiento,
     actor: Actor,
+    esperado?: EsperadoOferta,
   ): Promise<Oferta> {
-    const parametros = await tx.parametros();
-    const vigentes = await tx.trsVigentesDeRequerimiento(requerimiento.id);
-    const abiertas = await tx.ofertasAbiertasDeRequerimiento(requerimiento.id);
-    const disponibles = requerimiento.cantidadCupos - vigentes.length - abiertas.length;
-    if (disponibles <= 0) {
+    const cupos = await this.cuposDisponibles(tx, requerimiento);
+    if (cupos.disponibles <= 0) {
       throw new ErrorDominio('REQUERIMIENTO_SIN_CUPOS', 'El requerimiento no tiene cupos libres', {
         cantidadCupos: requerimiento.cantidadCupos,
-        asignados: vigentes.length,
-        ofertasAbiertas: abiertas.length,
+        asignados: cupos.asignados,
+        ofertasAbiertas: cupos.ofertasAbiertas,
       });
     }
-    const candidato = await this.siguienteElegible(
+    const { candidato, descartes, firma, cliente, parametros } = await this.siguienteElegible(
       tx,
       requerimiento.claseCola,
       requerimiento.clienteId,
       actor,
+      esperado,
     );
     return this.crearOferta(
       tx,
@@ -758,9 +869,39 @@ export class MotorCola {
       candidato.vehiculo.asociadoId,
       actor,
       parametros,
+      {
+        posicionElegida: candidato.posicion.posicion,
+        descartes,
+        firma,
+        clienteCodigo: cliente?.codigo ?? null,
+      },
     );
   }
 
+  /** Acta de una reoferta a la misma placa (política `reofertar`): sin evaluación, sin saltadas. */
+  private async actaReoferta(
+    tx: Transaccion,
+    requerimiento: Requerimiento,
+    vehiculoId: string,
+  ): Promise<ActaOferta> {
+    const { cliente, posiciones, filas } = await this.filasDeCola(
+      tx,
+      requerimiento.claseCola,
+      requerimiento.clienteId,
+    );
+    return {
+      posicionElegida: posiciones.find((p) => p.vehiculoId === vehiculoId)?.posicion ?? null,
+      descartes: [],
+      firma: firmaCola(filas),
+      clienteCodigo: cliente?.codigo ?? null,
+    };
+  }
+
+  /**
+   * Crea la oferta y su acta en la misma transacción (brief §5, spec §7.3): los saltos van a
+   * `oferta_saltos`, el audit `oferta.crear` lleva la decisión completa (posición elegida,
+   * saltadas, firma y los parámetros que la produjeron) y el aviso al asociado sale por la outbox.
+   */
   private async crearOferta(
     tx: Transaccion,
     requerimiento: Requerimiento,
@@ -768,6 +909,7 @@ export class MotorCola {
     asociadoId: string,
     actor: Actor,
     parametros: Parametros,
+    acta: ActaOferta,
   ): Promise<Oferta> {
     const ahora = this.reloj.ahora();
     const oferta: Oferta = {
@@ -794,8 +936,26 @@ export class MotorCola {
         actualizarPosicion(posiciones, vehiculoId, { turnosOfrecidos: actual.turnosOfrecidos + 1 }),
       );
     }
-    await tx.auditar(this.evento(actor, 'oferta.crear', 'ofertas', null, oferta));
+    await tx.guardarSaltos(oferta.id, acta.descartes);
+    await tx.auditar(
+      this.evento(actor, 'oferta.crear', 'ofertas', null, {
+        ...oferta,
+        claseCola: requerimiento.claseCola,
+        clienteId: requerimiento.clienteId,
+        posicionElegida: acta.posicionElegida,
+        descartes: acta.descartes,
+        firma: acta.firma,
+        // Reglas como datos (RULE-012): el acta dice con qué parámetros se decidió.
+        parametrosAplicados: {
+          declinacion_politica: parametros.declinacion_politica,
+          bloquear_por_documento_vencido: parametros.bloquear_por_documento_vencido,
+          un_tr_activo_por_placa: parametros.un_tr_activo_por_placa,
+          oferta_ttl_minutos: parametros.oferta_ttl_minutos,
+        },
+      }),
+    );
     // Aviso al asociado en la misma transacción (outbox, spec §11): sin oferta no hay aviso.
+    // `posicionElegida`, `saltadas` y `clienteCodigo` alimentan el "Te tocó porque" de la plantilla.
     await tx.notificar({
       evento: 'oferta.abierta',
       destinos: [{ asociadoId: oferta.asociadoId, vehiculoId: oferta.vehiculoId }],
@@ -804,8 +964,11 @@ export class MotorCola {
         vehiculoId: oferta.vehiculoId,
         requerimientoId: requerimiento.id,
         clienteId: requerimiento.clienteId,
+        clienteCodigo: acta.clienteCodigo,
         claseCola: requerimiento.claseCola,
         expiraEn: oferta.expiraEn,
+        posicionElegida: acta.posicionElegida,
+        saltadas: acta.descartes.length,
       },
     });
     return oferta;

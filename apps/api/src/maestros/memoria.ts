@@ -1,4 +1,5 @@
 import { ErrorDominio, type AlmacenMemoria, type Reloj } from '@asotracmet/domain';
+import { motivoBloqueoDesdeTexto } from '@asotracmet/shared';
 import type {
   AsociadoRegistro,
   ClienteRegistro,
@@ -101,18 +102,25 @@ export class MaestrosMemoria implements RepositorioMaestros {
     this.clientesMap = new Map(estado.clientes.map((c) => [c.id, { ...c, activo: true }]));
     this.destinosMap = new Map(estado.destinos.map((d) => [d.id, { ...d }]));
     this.habilitacionesMap = new Map(
-      estado.habilitaciones.map((h) => [
-        `${h.vehiculoId}:${h.clienteId}`,
-        {
-          id: `hab-${h.vehiculoId}-${h.clienteId}`,
-          vehiculoId: h.vehiculoId,
-          clienteId: h.clienteId,
-          apto: h.apto,
-          motivoBloqueo: h.motivoBloqueo,
-          requisitos: null,
-          actualizadoEn: ahora,
-        },
-      ]),
+      estado.habilitaciones.map((h) => {
+        // La proyección del dominio solo guarda el nombre del motivo; el código y la nota se
+        // recuperan del catálogo igual que hace la migración 0020 con una base anterior (TASK-0059).
+        const motivo = h.apto ? null : motivoBloqueoDesdeTexto(h.motivoBloqueo);
+        return [
+          `${h.vehiculoId}:${h.clienteId}`,
+          {
+            id: `hab-${h.vehiculoId}-${h.clienteId}`,
+            vehiculoId: h.vehiculoId,
+            clienteId: h.clienteId,
+            apto: h.apto,
+            motivoBloqueoCodigo: motivo?.codigo ?? null,
+            motivoBloqueo: motivo?.nombre ?? null,
+            nota: motivo?.nota ?? null,
+            requisitos: null,
+            actualizadoEn: ahora,
+          },
+        ];
+      }),
     );
     this.tiposMap = new Map(semilla.tiposDocumento.map((t) => [t.id, copia(t)]));
     this.transportadorasMap = new Map(semilla.transportadoras.map((t) => [t.id, copia(t)]));
@@ -387,6 +395,7 @@ export class MaestrosMemoria implements RepositorioMaestros {
       `${habilitacion.vehiculoId}:${habilitacion.clienteId}`,
       copia(habilitacion),
     );
+    // El motor solo ve el nombre del catálogo (`elegibilidad.detalle`); la nota se queda aquí.
     const proyeccion = {
       vehiculoId: habilitacion.vehiculoId,
       clienteId: habilitacion.clienteId,

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { CLASES_VEHICULO, ESTADOS_VEHICULO } from './estados.js';
 import { FECHA_ISO_REGEX } from './fechas.js';
+import { MotivoBloqueoSchema } from './motivos-bloqueo.js';
 import { PlacaSchema } from './placa.js';
 
 // Contratos de entrada de los maestros (spec §6.2-6.4, §8.3). Soft delete siempre; nunca DELETE físico.
@@ -204,13 +205,24 @@ export const FiltroDocumentosSchema = z.object({
 export const GuardarHabilitacionSchema = z
   .object({
     apto: z.boolean(),
-    motivoBloqueo: Texto(200).optional(),
+    /**
+     * Motivo del catálogo cerrado (TASK-0059). Ya no se acepta texto libre: el nombre del catálogo
+     * es lo que llega a la cola y al acta de turno.
+     */
+    motivoBloqueoCodigo: MotivoBloqueoSchema.optional(),
+    /** Detalle interno de HSEQ. Puede ser sensible: solo sale en la ficha (spec §12). */
+    nota: Texto(200).optional(),
     /** Snapshot de los checks del TURNERO (antigüedad, km, cursos). */
     requisitos: z.record(z.string(), z.unknown()).optional(),
   })
-  .refine((h) => h.apto || Boolean(h.motivoBloqueo && h.motivoBloqueo.length >= 3), {
-    message: 'Una placa no apta necesita motivo de bloqueo',
-  });
+  .refine((h) => h.apto || h.motivoBloqueoCodigo !== undefined, {
+    message: 'Una placa no apta necesita un motivo de bloqueo del catálogo',
+    path: ['motivoBloqueoCodigo'],
+  })
+  .refine(
+    (h) => h.apto || h.motivoBloqueoCodigo !== 'OTRO' || Boolean(h.nota && h.nota.length >= 3),
+    { message: 'El motivo "Otro" necesita una nota que lo explique', path: ['nota'] },
+  );
 export type GuardarHabilitacionInput = z.infer<typeof GuardarHabilitacionSchema>;
 
 export const FiltroMaestrosSchema = z.object({

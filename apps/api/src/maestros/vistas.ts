@@ -92,9 +92,21 @@ export function vistaDocumento(
 
 export type VistaDocumento = ReturnType<typeof vistaDocumento>;
 
+/**
+ * Habilitación tal como la ve HSEQ en la ficha (`VistaHabilitacionSchema`): código y nombre del
+ * catálogo más la nota interna. La cola y el acta solo reciben el nombre (TASK-0059).
+ */
 export function vistaHabilitacion(h: HabilitacionRegistro, cliente: ClienteRegistro | undefined) {
   return {
-    ...h,
+    id: h.id,
+    vehiculoId: h.vehiculoId,
+    clienteId: h.clienteId,
+    apto: h.apto,
+    motivoBloqueoCodigo: h.motivoBloqueoCodigo,
+    motivoBloqueo: h.motivoBloqueo,
+    nota: h.nota,
+    requisitos: h.requisitos,
+    actualizadoEn: h.actualizadoEn,
     cliente: cliente?.codigo ?? null,
     clienteNombre: cliente?.nombre ?? null,
   };

@@ -32,16 +32,19 @@ import {
   GuardarHabilitacionSchema,
   claseColaDe,
   fechaLocal,
-  veEnmascarado,
-  type Recurso,
+  nombreMotivoBloqueo,
 } from '@asotracmet/shared';
 import { cifrar } from '../auth/cifrado.js';
 import { actorDe, exigir } from '../auth/plugin.js';
+import { enmascara, esMember, exigirPropio, placasPropias } from './alcance.js';
 import type { Consultas } from '../consultas/tipos.js';
+import type { RepositorioUbicaciones } from '../gps/tipos.js';
+import { vistaUbicacion } from '../gps/vistas.js';
 import type {
   AsociadoRegistro,
   ConductorRegistro,
   DocumentoRegistro,
+  HabilitacionRegistro,
   RepositorioMaestros,
   VehiculoRegistro,
 } from '../maestros/tipos.js';
@@ -56,6 +59,8 @@ import {
 
 export interface DepsMaestros {
   maestros: RepositorioMaestros;
+  /** Última ubicación GPS de la placa en la ficha (ADR-0007, TASK-0063). */
+  ubicaciones: RepositorioUbicaciones;
   motor: MotorCola;
   uow: UnidadDeTrabajo;
   consultas: Consultas;
@@ -72,7 +77,7 @@ const HabilitacionParams = z.object({ id: z.string().min(1), clienteId: z.string
  * para que la cola de cada clase siga siendo "los vehículos activos de la clase" (§7.1.2, §13.3).
  */
 export function rutasMaestros(app: FastifyInstance, deps: DepsMaestros): void {
-  const { maestros, motor, uow, consultas, reloj, ids } = deps;
+  const { maestros, motor, uow, consultas, reloj, ids, ubicaciones } = deps;
 
   const auditar = (
     actor: Actor,
@@ -100,15 +105,6 @@ export function rutasMaestros(app: FastifyInstance, deps: DepsMaestros): void {
   }
 
   const ahora = () => reloj.ahora().toISOString();
-  const enmascara = (actor: Actor, recurso: Recurso) => veEnmascarado(actor.rol, recurso);
-  const esMember = (actor: Actor) => actor.rol === 'member';
-  const placasPropias = (actor: Actor) => new Set(actor.vehiculoIds ?? []);
-
-  function exigirPropio(actor: Actor, vehiculoId: string): void {
-    if (esMember(actor) && !placasPropias(actor).has(vehiculoId)) {
-      throw new ErrorDominio('FORBIDDEN_OWN_SCOPE', 'La placa no es tuya');
-    }
-  }
 
   async function asociadoOr404(id: string): Promise<AsociadoRegistro> {
     const a = await maestros.asociado(id);
@@ -424,6 +420,9 @@ export function rutasMaestros(app: FastifyInstance, deps: DepsMaestros): void {
       );
       const asociado = await maestros.asociado(vehiculo.asociadoId);
       const [enCola] = await consultas.posicionesDeVehiculos([id]);
+      // La ficha la alcanza el veedor (`R*`, no `own`): su ubicación va enmascarada como el resto.
+      const parametros = await consultas.parametros();
+      const [ubicacion] = await ubicaciones.ultimas([id]);
       return reply.send({
         vehiculo: vistaVehiculo(vehiculo, enmascara(actor, 'vehiculos')),
         asociado: asociado ? vistaAsociado(asociado, enmascara(actor, 'asociados')) : null,
@@ -437,6 +436,15 @@ export function rutasMaestros(app: FastifyInstance, deps: DepsMaestros): void {
         ),
         semaforo: semaforoDe(documentos),
         enCola: enCola ?? null,
+        ubicacion: ubicacion
+          ? vistaUbicacion(
+              ubicacion,
+              vehiculo.placa,
+              reloj.ahora(),
+              parametros,
+              enmascara(actor, 'vehiculos'),
+            )
+          : null,
       });
     },
   );
@@ -453,12 +461,17 @@ export function rutasMaestros(app: FastifyInstance, deps: DepsMaestros): void {
       const cliente = (await maestros.clientes()).find((c) => c.id === clienteId);
       if (!cliente) throw new ErrorDominio('NOT_FOUND', 'Cliente no existe');
       const previa = (await maestros.habilitacionesDe(id)).find((h) => h.clienteId === clienteId);
-      const nueva = {
+      // Catálogo cerrado (TASK-0059, spec §12): la cola y el acta solo ven el nombre del motivo;
+      // la nota de HSEQ se queda en la ficha. Volver a apta limpia las tres cosas.
+      const codigo = entrada.apto ? null : (entrada.motivoBloqueoCodigo ?? null);
+      const nueva: HabilitacionRegistro = {
         id: previa?.id ?? ids.nuevo(),
         vehiculoId: id,
         clienteId,
         apto: entrada.apto,
-        motivoBloqueo: entrada.apto ? null : (entrada.motivoBloqueo ?? null),
+        motivoBloqueoCodigo: codigo,
+        motivoBloqueo: codigo ? nombreMotivoBloqueo(codigo) : null,
+        nota: entrada.apto ? null : entrada.nota || null,
         requisitos: entrada.requisitos ?? previa?.requisitos ?? null,
         actualizadoEn: ahora(),
       };

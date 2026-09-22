@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import { v5 as uuidv5 } from 'uuid';
+import { motivoBloqueoDesdeTexto } from '@asotracmet/shared';
 import { crearSeed } from '../seed.js';
 
 // Volcado del mismo conjunto anonimizado del almacén en memoria a Postgres (TASK-0039).
@@ -116,17 +117,24 @@ export async function sembrarPostgres(
     }
 
     for (const h of estado.habilitaciones) {
+      // La semilla trae el nombre del catálogo (TASK-0059); el código y la nota salen de ahí.
+      const motivo = h.apto ? null : motivoBloqueoDesdeTexto(h.motivoBloqueo);
       await cliente.query(
-        `insert into habilitaciones (id, vehiculo_id, cliente_id, apto, motivo_bloqueo)
-         values ($1, $2, $3, $4, $5)
+        `insert into habilitaciones (id, vehiculo_id, cliente_id, apto, motivo_bloqueo,
+                                     motivo_bloqueo_codigo, motivo_bloqueo_nota)
+         values ($1, $2, $3, $4, $5, $6, $7)
          on conflict (vehiculo_id, cliente_id) do update set
-           apto = excluded.apto, motivo_bloqueo = excluded.motivo_bloqueo, updated_at = now()`,
+           apto = excluded.apto, motivo_bloqueo = excluded.motivo_bloqueo,
+           motivo_bloqueo_codigo = excluded.motivo_bloqueo_codigo,
+           motivo_bloqueo_nota = excluded.motivo_bloqueo_nota, updated_at = now()`,
         [
           uuidSemilla(`hab-${h.vehiculoId}-${h.clienteId}`),
           uuidSemilla(h.vehiculoId),
           idCliente.get(h.clienteId),
           h.apto,
-          h.motivoBloqueo,
+          motivo?.nombre ?? null,
+          motivo?.codigo ?? null,
+          motivo?.nota ?? null,
         ],
       );
     }

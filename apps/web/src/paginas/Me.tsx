@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api, codigoDeError, descargar } from '../api/cliente';
+import { UltimaUbicacion } from '../componentes/UltimaUbicacion';
 import type {
+  VistaUbicacion,
   AlertaDocumento,
   MiPosicion,
   MotivoDeclinacion,
@@ -12,6 +14,9 @@ import { OfertaCard } from '../componentes/OfertaCard';
 import { textoPosicion, tonoEstado, tonoSemaforo, traducirError } from '../utils/formato';
 
 const REFRESCO_MS = 4_000;
+// La ubicación cambia cada `gps_intervalo_minutos` (20 por defecto): no hace falta el refresco
+// de 4 s del resto de la pantalla.
+const REFRESCO_UBICACIONES_MS = 60_000;
 
 /** "Mi turno" (spec §9.2 Member): posición, oferta activa, histórico de TR propios. */
 export function Me() {
@@ -22,6 +27,11 @@ export function Me() {
     queryKey: ['me', 'cola'],
     queryFn: () => api<MiPosicion[]>('/me/cola'),
     refetchInterval: REFRESCO_MS,
+  });
+  const ubicaciones = useQuery({
+    queryKey: ['me', 'ubicaciones'],
+    queryFn: () => api<VistaUbicacion[]>('/vehiculos/ubicaciones'),
+    refetchInterval: REFRESCO_UBICACIONES_MS,
   });
   const ofertas = useQuery({
     queryKey: ['me', 'ofertas'],
@@ -83,6 +93,21 @@ export function Me() {
           <p key={p.placa} className="posicion" data-testid="mi-posicion">
             {textoPosicion(p.claseCola, p.posicion, p.total)} · <strong>{p.placa}</strong>
           </p>
+        ))}
+      </section>
+
+      <section className="card" data-testid="mis-ubicaciones">
+        <h2>Tu camión</h2>
+        {(ubicaciones.data ?? []).length === 0 && (
+          <p className="detalle">Todavía no hay ubicación de tus placas.</p>
+        )}
+        {ubicaciones.data?.map((u) => (
+          <div key={u.vehiculoId}>
+            <p className="posicion">
+              <strong>{u.placa}</strong>
+            </p>
+            <UltimaUbicacion ubicacion={u} />
+          </div>
         ))}
       </section>
 

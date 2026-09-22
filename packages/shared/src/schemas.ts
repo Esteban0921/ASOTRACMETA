@@ -74,6 +74,21 @@ export const MotivoSchema = z.object({
 });
 export type MotivoInput = z.infer<typeof MotivoSchema>;
 
+/**
+ * `POST /requerimientos/:id/ofertas` (acta de turno, brief §5). `esperado` es lo que la sala vio en
+ * la vista previa: la placa que saldría y la firma de la cola. El motor lo verifica y, si la cola
+ * cambió, responde `CANDIDATO_CAMBIO` sin efectos. Sin `esperado` se ofrece como siempre.
+ */
+export const OfrecerSchema = z.object({
+  esperado: z
+    .object({
+      vehiculoId: z.string().min(1),
+      firma: z.string().regex(/^[0-9a-f]{16}$/, 'Firma inválida: 16 hex de FNV-1a 64'),
+    })
+    .optional(),
+});
+export type OfrecerInput = z.infer<typeof OfrecerSchema>;
+
 export const FiltroOfertasSchema = z.object({
   estado: z.enum(ESTADOS_OFERTA).optional(),
   requerimientoId: z.string().optional(),

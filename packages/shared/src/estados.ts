@@ -26,6 +26,14 @@ export type EstadoDocumento = (typeof ESTADOS_DOCUMENTO)[number];
 export const ESTADOS_REQUERIMIENTO = ['abierto', 'cerrado', 'cancelado'] as const;
 export type EstadoRequerimiento = (typeof ESTADOS_REQUERIMIENTO)[number];
 
+/**
+ * Frescura de la última ubicación GPS de una placa (ADR-0007, TASK-0062). No es un estado que
+ * alguien escriba: lo calcula la API al leer, comparando `capturada_en` con `gps_frescura_minutos`
+ * y `gps_sin_senal_minutos`. `sin_senal` incluye a la placa que nunca reportó.
+ */
+export const FRESCURAS_GPS = ['reciente', 'desactualizada', 'sin_senal'] as const;
+export type FrescuraGps = (typeof FRESCURAS_GPS)[number];
+
 export const CLASES_VEHICULO = ['C100', 'C350', 'C600', 'MM', 'TM', 'CBZ'] as const;
 export type ClaseVehiculo = (typeof CLASES_VEHICULO)[number];
 

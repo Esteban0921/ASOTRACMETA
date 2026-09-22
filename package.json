@@ -12,7 +12,7 @@
     "dev": "pnpm -r --parallel --filter ./apps/* dev",
     "build": "pnpm -r build && pnpm build:scripts && pnpm build:contrato",
     "build:contrato": "tsx scripts/openapi.ts",
-    "build:scripts": "esbuild scripts/migrate-db.ts scripts/seed-db.ts --bundle --platform=node --format=esm --target=node24 --outdir=dist/scripts --out-extension:.js=.mjs --external:pg --external:uuid --external:zod",
+    "build:scripts": "esbuild scripts/migrate-db.ts scripts/seed-db.ts scripts/gps-agente.ts --bundle --platform=node --format=esm --target=node24 --outdir=dist/scripts --out-extension:.js=.mjs --external:pg --external:uuid --external:zod",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
@@ -31,7 +31,8 @@
     "db:reset": "tsx scripts/migrate-db.ts && tsx scripts/seed-db.ts",
     "db:anonymize-staging": "tsx scripts/anonymize-staging.ts",
     "prepare": "husky",
-    "db:migrate-xlsx": "tsx scripts/migrate-xlsx.ts"
+    "db:migrate-xlsx": "tsx scripts/migrate-xlsx.ts",
+    "gps:agente": "tsx scripts/gps-agente.ts"
   },
   "devDependencies": {
     "@asotracmet/api": "workspace:*",

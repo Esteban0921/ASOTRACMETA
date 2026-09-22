@@ -1,0 +1,377 @@
+/*
+ * Estilos de las pantallas actuales reescritos sobre los tokens (TASK-0044). Las pantallas se
+ * rediseñan en TASK-0048..0051; mientras tanto el marcado no cambia y esto las mantiene coherentes
+ * con el sistema (tarjetas, chips, tablas densas, formularios).
+ */
+
+.contenido h2,
+.contenido h3 {
+  margin-bottom: var(--e-2);
+}
+
+.card {
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--r-l);
+  box-shadow: var(--sombra-1);
+  padding: var(--e-4) var(--e-5);
+  margin-bottom: var(--e-4);
+
+  &.ambar {
+    border-color: var(--ambar-borde);
+    border-left: 4px solid var(--ambar-solido);
+    background: color-mix(in srgb, var(--ambar-fondo) 60%, var(--superficie));
+  }
+}
+
+.detalle {
+  color: var(--texto-2);
+  font-size: var(--t-sm);
+  line-height: var(--lh-sm);
+  margin: var(--e-1) 0;
+}
+
+.error,
+.info {
+  border: 1px solid;
+  border-left-width: 4px;
+  border-radius: var(--r-m);
+  padding: var(--e-2) var(--e-3);
+  font-weight: 500;
+  margin: 0 0 var(--e-3);
+}
+
+.error {
+  background: var(--rojo-fondo);
+  color: var(--rojo-texto);
+  border-color: var(--rojo-borde);
+  grid-column: 1 / -1;
+}
+
+.info {
+  background: var(--verde-fondo);
+  color: var(--verde-texto);
+  border-color: var(--verde-borde);
+}
+
+label {
+  display: grid;
+  gap: var(--e-1);
+  font-weight: 600;
+  font-size: var(--t-sm);
+  line-height: var(--lh-sm);
+}
+
+label.fila,
+label.opcion,
+.formulario label:has(> input[type='checkbox']) {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--e-2);
+  font-weight: 400;
+  font-size: var(--t-cuerpo);
+  line-height: var(--lh-cuerpo);
+}
+
+.admin {
+  max-width: var(--ancho-admin);
+  margin: 0 auto;
+}
+
+.formulario {
+  display: grid;
+  gap: var(--e-3);
+  max-width: 480px;
+}
+
+.hseq {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(0, 2fr);
+  gap: var(--e-4);
+  container-type: inline-size;
+}
+
+/* Chips legadas (`.badge`): mismos tonos que Chip, con punto de color y contraste AA */
+.badge {
+  --badge-texto: var(--gris-texto);
+  --badge-fondo: var(--gris-fondo);
+  --badge-borde: var(--gris-borde);
+  --badge-punto: var(--gris-solido);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0 0.6em;
+  min-height: 22px;
+  margin-left: var(--e-1);
+  border: 1px solid color-mix(in srgb, var(--badge-borde) 55%, transparent);
+  border-radius: var(--r-pill);
+  background: var(--badge-fondo);
+  color: var(--badge-texto);
+  font-size: var(--t-xs);
+  line-height: var(--lh-xs);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  white-space: nowrap;
+  vertical-align: middle;
+
+  &::before {
+    content: '';
+    width: 0.5em;
+    height: 0.5em;
+    border-radius: 50%;
+    background: var(--badge-punto);
+    flex-shrink: 0;
+  }
+
+  &.ambar {
+    --badge-texto: var(--ambar-texto);
+    --badge-fondo: var(--ambar-fondo);
+    --badge-borde: var(--ambar-borde);
+    --badge-punto: var(--ambar-solido);
+  }
+
+  &.verde {
+    --badge-texto: var(--verde-texto);
+    --badge-fondo: var(--verde-fondo);
+    --badge-borde: var(--verde-borde);
+    --badge-punto: var(--verde-solido);
+  }
+
+  &.rojo {
+    --badge-texto: var(--rojo-texto);
+    --badge-fondo: var(--rojo-fondo);
+    --badge-borde: var(--rojo-borde);
+    --badge-punto: var(--rojo-solido);
+  }
+}
+
+h2 .badge,
+h3 .badge {
+  margin-left: var(--e-2);
+}
+
+/* Sala de turnos: tres columnas con container queries (brief §1) */
+.sala {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(0, 1.6fr) minmax(280px, 1fr);
+  gap: var(--e-4);
+  container-type: inline-size;
+}
+
+.columna {
+  min-width: 0;
+  container-type: inline-size;
+}
+
+.pestanas {
+  & h2 {
+    margin: 0 auto 0 0;
+  }
+
+  & label {
+    display: flex;
+    align-items: center;
+    gap: var(--e-2);
+    margin-left: auto;
+  }
+
+  & select,
+  & input {
+    width: auto;
+    min-width: 140px;
+  }
+
+  & select[data-testid='cola-cliente'] {
+    margin-left: auto;
+  }
+}
+
+.lista {
+  list-style: none;
+  margin: 0 0 var(--e-4);
+  padding: 0;
+}
+
+.item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--e-2);
+  padding: var(--e-2) 0;
+  border-bottom: 1px solid var(--borde);
+
+  &:last-child {
+    border-bottom: 0;
+  }
+
+  & > p {
+    flex-basis: 100%;
+    margin: 0;
+  }
+
+  & > button:last-child:not(.enlace) {
+    margin-left: auto;
+  }
+
+  &.ambar {
+    margin: var(--e-1) 0;
+    padding: var(--e-2) var(--e-3);
+    border: 1px solid var(--ambar-borde);
+    border-left-width: 4px;
+    border-radius: var(--r-m);
+    background: color-mix(in srgb, var(--ambar-fondo) 60%, var(--superficie));
+  }
+}
+
+.acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--e-2);
+  margin-top: var(--e-3);
+  align-items: center;
+
+  & :is(input, select) {
+    width: auto;
+    flex: 1 1 160px;
+  }
+}
+
+/* Login / Entrar: amanecer sobre papel; el rediseño en dos paneles es TASK-0050 */
+.login {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: var(--e-4);
+  background:
+    radial-gradient(
+      ellipse 80% 50% at 50% -10%,
+      color-mix(in srgb, var(--ambar-fondo) 80%, transparent),
+      transparent 70%
+    ),
+    var(--fondo);
+
+  & .card {
+    width: min(440px, 100%);
+    display: grid;
+    gap: var(--e-3);
+    padding: var(--e-6);
+  }
+
+  & .login-marca {
+    margin: 0;
+    color: var(--marca-texto);
+  }
+
+  & .lema {
+    margin: 0;
+    font-size: var(--t-lg);
+    line-height: var(--lh-lg);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  & label {
+    gap: var(--e-1);
+  }
+
+  & .card > button {
+    min-height: 48px;
+  }
+}
+
+.ayuda {
+  font-size: var(--t-xs);
+  line-height: var(--lh-xs);
+  color: var(--texto-2);
+}
+
+/* Mi turno: ancho de lectura y densidad bolsillo */
+.mi-turno {
+  max-width: var(--ancho-lectura);
+  margin: 0 auto;
+}
+
+.posicion {
+  font-size: var(--t-lg);
+  line-height: var(--lh-lg);
+  font-weight: 500;
+  margin: var(--e-2) 0;
+
+  & strong {
+    font-variant-numeric: tabular-nums slashed-zero;
+    letter-spacing: 0.04em;
+  }
+}
+
+.oferta {
+  & header {
+    display: flex;
+    align-items: center;
+    gap: var(--e-3);
+    margin-bottom: var(--e-2);
+  }
+
+  & header h3 {
+    margin: 0;
+    font-size: var(--t-xl);
+    line-height: var(--lh-xl);
+    font-variant-numeric: tabular-nums slashed-zero;
+    letter-spacing: 0.04em;
+  }
+
+  & .acciones {
+    display: grid;
+    gap: var(--e-2);
+  }
+
+  & .acciones > button {
+    min-height: 52px;
+  }
+}
+
+/* Auditoría: JSON plegado con scroll y tipografía monoespaciada solo ahí */
+details {
+  margin-top: var(--e-1);
+
+  & summary {
+    cursor: pointer;
+    color: var(--enlace);
+    font-size: var(--t-xs);
+    font-weight: 600;
+  }
+}
+
+pre {
+  margin: var(--e-2) 0 0;
+  padding: var(--e-3);
+  max-height: 240px;
+  max-width: 520px;
+  overflow: auto;
+  border: 1px solid var(--borde);
+  border-radius: var(--r-s);
+  background: var(--superficie-2);
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: var(--t-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 0.95em;
+  padding: 2px 6px;
+  border-radius: var(--r-s);
+  background: var(--superficie-2);
+  border: 1px solid var(--borde);
+  letter-spacing: 0.06em;
+}
+
+@media (max-width: 960px) {
+  .sala,
+  .hseq {
+    grid-template-columns: 1fr;
+  }
+}

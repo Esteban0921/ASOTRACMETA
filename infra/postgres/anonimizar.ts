@@ -15,6 +15,8 @@ export interface ResumenAnonimizacion {
   documentos: number;
   auditoria: number;
   sesionesBorradas: number;
+  /** Filas de `vehiculo_ubicaciones` borradas: la traza GPS no viaja a staging (ADR-0007). */
+  ubicacionesBorradas: number;
 }
 
 export interface OpcionesAnonimizacion {
@@ -116,7 +118,11 @@ export async function anonimizar(
     await cliente.query('alter table audit_log enable trigger audit_log_sin_update_ni_delete');
 
     const sesiones = await cliente.query('select count(*)::int as n from sesiones');
-    await cliente.query('truncate sesiones, otp_codes');
+    // La traza de ubicaciones identifica al conductor (spec §12): staging no la necesita.
+    const ubicaciones = await cliente.query<{ n: string }>(
+      'select count(*)::text as n from vehiculo_ubicaciones',
+    );
+    await cliente.query('truncate sesiones, otp_codes, vehiculo_ubicaciones');
 
     await cliente.query('commit');
     return {
@@ -128,6 +134,7 @@ export async function anonimizar(
       documentos: documentos.rowCount ?? 0,
       auditoria: auditoria.rowCount ?? 0,
       sesionesBorradas: Number(sesiones.rows[0]?.n ?? 0),
+      ubicacionesBorradas: Number(ubicaciones.rows[0]?.n ?? 0),
     };
   } catch (error) {
     await cliente.query('rollback').catch(() => undefined);

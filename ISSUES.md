@@ -1,6 +1,6 @@
 # ISSUES.md — Backlog de ASOTRACMET
 
-**Próximo ID: TASK-0062** · Reglas de este archivo: RULE-002 a RULE-007 en [AGENTS.md](AGENTS.md).
+**Próximo ID: TASK-0072** · Reglas de este archivo: RULE-002 a RULE-007 en [AGENTS.md](AGENTS.md).
 
 Estados: `pendiente` · `en_progreso` · `bloqueada` · `hecha` · `descartada`.
 Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable), 2 (viaje y plata),
@@ -71,6 +71,16 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 | TASK-0059 | Catálogo de motivos de bloqueo HSEQ                           | 3    | media     | en_progreso   |
 | TASK-0060 | Tiempo real opcional por SSE con polling de respaldo          | 2    | media     | pendiente   |
 | TASK-0061 | `pnpm test:db` solo contra una base de pruebas `*_test`      | 0    | alta      | hecha       |
+| TASK-0062 | GPS: ADR-0007, esquema compartido, tabla e ingesta con token  | 4    | media     | hecha       |
+| TASK-0063 | GPS: lectura por la API (últimas, ficha), frescura y purga    | 4    | media     | hecha       |
+| TASK-0064 | Agente GPS satélite: ciclo de 20 min y adaptador simulado     | 4    | media     | hecha       |
+| TASK-0065 | Web: última ubicación en ficha, Mi turno y sala de turnos     | 4    | media     | hecha       |
+| TASK-0066 | Historial por placa y mapa de la flota (`/mapa`)              | 4    | baja      | hecha       |
+| TASK-0067 | Adaptador GPS real: Vía GPS (`gpsmobile.net`)                 | 4    | media     | bloqueada   |
+| TASK-0068 | Adaptador GPS real de la segunda plataforma                   | 4    | baja      | bloqueada   |
+| TASK-0069 | Habeas data: supresión de ubicaciones de un vehículo          | 4    | baja      | hecha       |
+| TASK-0070 | Aviso `gps.sin_senal` por la outbox                           | 4    | baja      | pendiente   |
+| TASK-0071 | Bug: `CodigoTr.tsx` no compila (`data-testid` sobre `resto`)  | 1    | alta      | hecha       |
 
 ## Tareas
 
@@ -654,7 +664,7 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
   - [ ] Cada componente con test de Testing Library (roles ARIA, teclado en `Pestanas`, copiar en `CodigoTr`, `Tooltip` por foco y Esc)
   - [ ] Ruta `/dev/ui` solo en `import.meta.env.DEV` con todos los estados
   - [ ] Ningún enum crudo en pantalla: `Chip` siempre con `textoEstado*`
-  - [ ] `pnpm check` y `pnpm test:e2e` en verde
+  - [x] `pnpm check` y `pnpm test:e2e` en verde
 - **Referencias:** spec §9.3; ARCHITECTURE §7; TASK-0044
 - **Evidencia:** _(pendiente)_
 
@@ -864,6 +874,314 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
   - [x] CI (`ci.yml`: `POSTGRES_DB` y `DATABASE_URL` → `asotracmet_test`), `.env.example` (`DATABASE_URL_TEST`) y el arranque rápido de AGENTS.md actualizados
 - **Referencias:** AGENTS RULE-018, RULE-021; ARCHITECTURE §10; TASK-0025, TASK-0039
 - **Evidencia (2026-09-18):** `DATABASE_URL_TEST=postgres://…/asotracmet_test pnpm exec vitest run --project db` → 4 archivos, 30 passed. Con `DATABASE_URL=postgres://…/asotracmet` (base de desarrollo) → falla en el arranque con «solo corre contra una base cuyo nombre termine en "_test"» y la base queda intacta (265 viajes, 52 posiciones). Restauración previa: `pnpm db:migrate-xlsx` → «Carga confirmada: 265 TR, 257 recaudos, 33 usuarios»; cabeza TM-CBZ = TGM586 (orden del TURNERO). `pnpm exec eslint infra/postgres` ✓.
+
+### TASK-0062 — GPS: decisión, esquema compartido, tabla de ubicaciones e ingesta con token
+
+- **Estado:** hecha (2026-09-22)
+- **Fase:** 4
+- **Prioridad:** media
+- **Contexto:** La asociación necesita ver dónde está cada tractocamión. Las plataformas de GPS de
+  los propietarios no tienen API pública y cada propietario tiene su usuario y su clave. La spec
+  §2 (línea 66) declara la telemetría GPS en vivo como no-objetivo del MVP y §19 Fase 4 admite las
+  integraciones GPS «como satélites»; §12 (línea 777) y el criterio §20.9 prohíben persistir
+  claves de terceros. Por RULE-001 esta tarea decide explícitamente el cambio de alcance en
+  `docs/adr/0007-ubicacion-gps-por-agente-satelite.md`: entra «última ubicación periódica por
+  agente satélite», las claves siguen fuera de la base (archivo de secretos montado solo en el
+  agente) y la API solo recibe posiciones ya normalizadas. Esta tarea entrega la decisión, el
+  lenguaje compartido, la tabla con RLS y la ruta de ingesta; leer y pintar son TASK-0063/0065.
+- **Criterio de done:**
+  - [x] ADR-0007 con decisión, alternativas descartadas (claves cifradas en la base, job dentro de
+        la API, navegador por defecto) y consecuencias (excepción a RULE-022, rol RLS `gps_ingesta`,
+        sin auditoría por lote, prerrequisito de autorización del propietario)
+  - [x] Spec §2 y §19 anotadas con el cambio de alcance; criterio nuevo §20.11 («un viewer no
+        obtiene coordenadas; un member no obtiene ubicación ajena»); §12 y §20.9 intactas
+  - [x] `packages/shared`: `FRESCURAS_GPS` en `estados.ts`, `gps.ts` con los esquemas `.strict()`
+        del lote y `frescuraDe`, cuatro parámetros `gps_*` con default, Zod y test
+  - [x] Migración `0021_vehiculo_ubicaciones.sql`: tabla con `unique (vehiculo_id, capturada_en)`,
+        RLS forzada (member solo sus placas, inserción solo `gps_ingesta`, borrado `sistema`/
+        `superadmin`), `revoke update`, defaults de los parámetros; ninguna columna de credenciales
+  - [x] `RepositorioUbicaciones` con adaptador en memoria y Postgres, enganchado en `Almacenamiento`
+  - [x] `POST /api/v1/gps/ubicaciones` con token de servicio (comparación timing-safe), rate limit,
+        contexto RLS `gps_ingesta`, idempotente por `(placa, capturadaEn)`, ignora placas
+        desconocidas, vehículos inactivos y capturas futuras, y responde `intervaloMinutos`
+  - [x] Test de API (401 sin token y con token malo, lote repetido no duplica, ignorados contados,
+        rate limit, log sin coordenadas ni token) y test de base (RLS por rol, unique, privilegios)
+  - [x] `pnpm check` y `pnpm test:db` en verde; `docs/openapi.json` regenerado; ARCHITECTURE.md
+        actualizado (RULE-024)
+- **Referencias:** spec §2, §12, §19, §20.9; ARCHITECTURE §6.13, §8, §11, §12; AGENTS RULE-001,
+  RULE-012, RULE-021, RULE-022, RULE-025; ADR-0005, ADR-0006; TASK-0071 (desbloqueó la verificación)
+- **Evidencia (2026-09-22):** `pnpm exec vitest run --project shared --project domain
+  --project api` → 32 archivos, 266 passed (2 skipped), con `gps.test.ts` (20 casos: token de
+  servicio, idempotencia, descartes contados, log sin PII) y `openapi.test.ts` validando la
+  respuesta real contra la vista compartida. `DATABASE_URL_TEST=…/asotracmet_test pnpm test:db`
+  → 6 archivos, 41 passed, incluida `vehiculo-ubicaciones.test.ts`: ninguna columna de
+  credenciales, unicidad por placa e instante, `distinct on` devuelve la última, la purga
+  conserva la última de cada placa, RLS (`gps_ingesta` inserta ubicaciones pero no cola;
+  `sistema` no inserta; member solo lee las suyas y no escribe) y `asotracmet_app` sin UPDATE.
+  La primera corrida de `test:db` falló por una carrera entre dos suites que aplicaban la misma
+  migración a la vez; con 0021 ya aplicada, verde. `pnpm check` completo en verde: 38 archivos, 400 passed (41 skipped, los de base sin
+  `DATABASE_URL`), lint 0 errores, «All matched files use Prettier code style!».
+  `DATABASE_URL_TEST=…/asotracmet_test pnpm test:db` → 6 archivos, 41 passed. `pnpm test:e2e`
+  → 16 passed. `pnpm build:contrato` → «83 rutas, 89 esquemas (v1.1.0)».
+
+### TASK-0063 — GPS: lectura por la API (últimas, ficha), frescura y purga
+
+- **Estado:** hecha (2026-09-22)
+- **Fase:** 4
+- **Prioridad:** media
+- **Contexto:** Con las ubicaciones ya guardadas (TASK-0062), la API debe exponerlas con el mismo
+  reparto de permisos que el resto de la flota (spec §3.2): los roles internos ven la posición
+  exacta, el `member` solo sus placas y el `viewer` (`R*`) solo la frescura, sin coordenadas. La
+  frescura se calcula en el servidor con el reloj de la API y los parámetros, no en el navegador.
+  Incluye la purga por retención, que es lo que impide que la tabla crezca sin control.
+- **Criterio de done:**
+  - [x] `VistaUbicacionSchema` en `vistas.ts` y `ubicacion` en la ficha del vehículo
+  - [x] `GET /api/v1/vehiculos/ubicaciones` con scope `own` y enmascarado del veedor
+  - [x] La ficha enmascara la ubicación igual que las demás sub-vistas (el veedor la alcanza)
+  - [x] Purga por `gps_retencion_dias` conservando la última captura de cada placa, en el job
+        diario y por `POST /api/v1/jobs/purgar-ubicaciones` (auditado)
+  - [x] `/metrics` expone `asotracmet_gps_ultimo_lote_segundos` y `asotracmet_gps_placas_sin_senal`
+  - [x] `GET /me/extracto` menciona la ubicación y su retención (habeas data, spec §12)
+  - [x] Tests de API por rol (viewer sin coordenadas en lista y ficha, member solo sus placas) y
+        `pnpm test:db` con RLS; `docs/openapi.json` regenerado
+- **Referencias:** spec §3.2, §12; ARCHITECTURE §6.4, §6.13, §12; TASK-0062
+- **Evidencia (2026-09-22):** siete casos nuevos en `apps/api/src/gps.test.ts`: un rol interno
+  ve las tres placas con coordenadas; `member.fst189` solo `FST189` y `TKM221`, nunca `SWI750`;
+  el veedor recibe `enmascarada: true` con latitud, longitud y velocidad en nulo, en la lista y
+  en la ficha de `FST189`; la frescura pasa de `reciente` a `desactualizada` (45 min) y a
+  `sin_senal` (5 h) moviendo solo el reloj del servidor; la purga con `gps_retencion_dias: 1`
+  borra la lectura vieja, conserva las tres últimas y deja `gps.purgar` en `GET /audit`; un
+  coordinador recibe 403 al dispararla. `pnpm check` completo en verde: 38 archivos, 400 passed (41 skipped, los de base sin
+  `DATABASE_URL`), lint 0 errores, «All matched files use Prettier code style!».
+  `DATABASE_URL_TEST=…/asotracmet_test pnpm test:db` → 6 archivos, 41 passed. `pnpm test:e2e`
+  → 16 passed. `pnpm build:contrato` → «83 rutas, 89 esquemas (v1.1.0)».
+
+### TASK-0064 — Agente GPS satélite: ciclo de 20 minutos, cuentas en archivo de secretos y adaptador simulado
+
+- **Estado:** hecha (2026-09-22)
+- **Fase:** 4
+- **Prioridad:** media
+- **Contexto:** El proceso que entra a las plataformas de GPS corre aparte de la API (spec §19
+  «satélites»): así el archivo con las claves de los propietarios solo se monta en su contenedor
+  (RULE-021) y una plataforma caída o lenta no toca la cola. Se empaqueta como un script más de la
+  imagen existente (`dist/scripts`), con la lógica probada en `apps/api/src/gps/agente/` y un
+  cerco de ESLint que le impide importar Fastify, pg o Redis. El adaptador `simulado` permite
+  probar el circuito completo antes de conocer las plataformas reales (TASK-0067/0068).
+- **Criterio de done:**
+  - [x] Ciclo reentrante que relee el archivo de cuentas, consulta por cuenta con timeout, envía un
+        lote por cuenta y adopta el intervalo que devuelve la API
+  - [x] Backoff por cuenta ante credenciales inválidas (no se repite el login que puede bloquear la
+        cuenta del propietario) y verificación del token con un lote vacío antes de consultar
+  - [x] Log estructurado con lista blanca de campos: test que afirma que no aparecen usuario,
+        clave, token ni coordenadas
+  - [x] Servicio `gps-agente` en `infra/compose.prod.yaml` (perfil `gps`, sin puertos, solo
+        lectura, con el archivo de cuentas montado `:ro`), `.env.example` y `docs/despliegue.md`
+  - [x] `docs/runbooks/gps-agente.md` indexado en `docs/runbooks/README.md` y ARCHITECTURE §14
+  - [ ] Los términos y condiciones de asociado mencionan la ubicación del vehículo, su finalidad,
+        su retención y cómo pedir la supresión (la autorización sale de ahí, ADR-0007). **No es
+        código:** lo revisa la asociación; el extracto de habeas data y el ADR ya lo describen
+  - [x] `pnpm check` en verde y prueba manual con el adaptador simulado contra la API local
+- **Referencias:** spec §12, §19; ARCHITECTURE §3, §11, §12, §14; AGENTS RULE-019, RULE-020,
+  RULE-021; ADR-0007; TASK-0062, TASK-0067
+- **Evidencia (2026-09-22):** 20 casos en `apps/api/src/gps/agente/agente.test.ts`, todos con
+  dobles (ni red, ni reloj real, ni credenciales): el ejemplo versionado
+  `infra/gps-cuentas.example.json` valida y trae las 17 placas de la semilla; un archivo con
+  formato inválido falla sin mencionar usuario ni clave; avisa si los permisos no son 0400; el
+  proveedor simulado es determinista por placa y ventana; el ciclo comprueba el token con un
+  lote vacío antes de consultar nada y, si la API lo rechaza, no toca ninguna plataforma; manda
+  un lote por cuenta y adopta el `intervaloMinutos` de la respuesta; respeta la lista de placas
+  de la cuenta; una plataforma caída no impide que las demás entreguen; unas credenciales
+  inválidas apartan la cuenta varios ciclos (un fallo pasajero se reintenta en el siguiente); si
+  el archivo desaparece no se reutilizan las credenciales anteriores; el log no contiene
+  usuario, clave, placas ni coordenadas; el cliente reintenta una vez ante caída de red y ni una
+  ante token rechazado; el bucle programa la vuelta siguiente, no solapa dos y deja de programar
+  al detenerse.
+  **Prueba manual de punta a punta (2026-09-22):** API en memoria en el puerto 3099 y
+  `GPS_CUENTAS_ARCHIVO=infra/gps-cuentas.example.json GPS_PROVEEDOR_FORZADO=simulado pnpm gps:agente`
+  → el log del agente muestra «ciclo terminado» con `cuentas: 3, consultadas: 3, enviadas: 3,
+  recibidas: 17, guardadas: 17`; `GET /api/v1/vehiculos/ubicaciones` como coordinador devuelve
+  las 17 placas con coordenadas y `frescura: reciente`; como veedor, las mismas 17 con cero
+  coordenadas; `/metrics` muestra `asotracmet_gps_lotes_total 4`,
+  `asotracmet_gps_ubicaciones_total{resultado="guardadas"} 17` y
+  `asotracmet_gps_ultimo_lote_segundos 9`; una segunda corrida del agente devuelve
+  `duplicadas: 17` y `guardadas: 0` (idempotencia real). Corregido de paso un fallo que la
+  prueba destapó: la métrica recorría todo el resultado de la ingesta y acababa concatenando el
+  identificador del lote; ahora solo cuenta guardadas, duplicadas e ignoradas.
+  `pnpm build:scripts` → `dist/scripts/gps-agente.mjs` (51,4 kb, sin `fastify` ni `pg` dentro).
+  `docker compose -f infra/compose.prod.yaml --profile gps config` válido. `pnpm check` → 39
+  archivos, 420 passed (41 skipped), lint 0 errores, formato limpio. `pnpm test:db` → 41 passed.
+  `pnpm test:e2e` → 16 passed.
+
+### TASK-0065 — Web: última ubicación en ficha HSEQ, Mi turno y sala de turnos
+
+- **Estado:** hecha (2026-09-22)
+- **Fase:** 4
+- **Prioridad:** media
+- **Contexto:** La ubicación solo sirve si se ve donde se trabaja: la ficha del vehículo (HSEQ), la
+  sala de turnos y «Mi turno» del asociado. Un componente autocontenido (`UltimaUbicacion`)
+  minimiza el conflicto con el rediseño en curso (TASK-0048/0049/0050), que al empezar esta
+  tarea todavía no había reescrito ninguna de las tres pantallas. El veedor no recibe
+  coordenadas de la API, así que la UI no puede enlazar a un mapa externo para ese rol.
+- **Criterio de done:**
+  - [x] `textoHace`, `tonoFrescura` y `urlMapaExterno` en `utils/formato.ts` con test
+  - [x] `UltimaUbicacion` con chip de frescura, «hace X min» y enlace externo solo si no está
+        enmascarada; «Sin GPS» cuando no hay lecturas
+  - [x] Integrado en ficha HSEQ, sala de turnos y Mi turno, con refresco de 60 s
+  - [x] E2E: ops ve la ubicación, el asociado solo las suyas, el veedor ningún enlace con coordenadas
+  - [x] `pnpm check` y `pnpm test:e2e` en verde
+- **Referencias:** spec §9, §3.2; ARCHITECTURE §7; ADR-0007; TASK-0063, TASK-0048, TASK-0050
+- **Evidencia (2026-09-22):** componente `apps/web/src/componentes/UltimaUbicacion.tsx` con dos
+  variantes (completa en la ficha y en Mi turno, chip en las listas), integrado en la ficha de
+  HSEQ, en la lista de la flota, en la fila de la cola de la sala de turnos y en un bloque «Tu
+  camión» de Mi turno, todos con refresco de 60 s (el dato cambia cada 20 min, no cada 4 s).
+  Cinco casos nuevos en `UltimaUbicacion.test.tsx`: pinta estado, «hace X» y enlace al mapa; con
+  la ubicación enmascarada no pinta coordenadas ni enlace; una placa sin lecturas dice «Sin GPS»
+  en vez de parecer un error; distingue reporte atrasado de sin señal; `textoHace` redacta
+  minutos, horas y días. E2E nuevo `e2e/ubicaciones.spec.ts` (3 casos, navegador real): el
+  coordinador ve «Reportando» en la cola; el asociado ve sus dos placas con enlace al mapa y
+  `SWI750` no aparece; el veedor ve «Reportando» y la página no contiene **ningún** enlace a
+  Google Maps. `pnpm check` → 40 archivos, 425 passed (41 skipped), lint 0 errores, formato
+  limpio. `pnpm test:e2e` → 19 passed. `pnpm test:db` → 41 passed.
+
+### TASK-0066 — Historial por placa y mapa de la flota
+
+- **Estado:** hecha (2026-09-22)
+- **Fase:** 4
+- **Prioridad:** baja
+- **Contexto:** Ver el recorrido de un camión y la flota sobre un mapa. Añade la primera
+  dependencia de cartografía del proyecto (Leaflet + teselas OpenStreetMap), con ruta perezosa y
+  fuera del precache de la PWA para no engordar el arranque ni filtrar coordenadas al service
+  worker. El veedor no entra: no recibe coordenadas (spec §3.2).
+- **Criterio de done:**
+  - [x] `GET /api/v1/vehiculos/:id/ubicaciones` con rango, límite y scope `own`; veedor rechazado
+  - [x] Ruta `/mapa` perezosa con marcadores y recorrido de la placa seleccionada
+  - [x] El chunk del mapa queda fuera del precache; las teselas nunca se cachean
+  - [x] E2E mínimo del mapa; `pnpm check` y `pnpm test:e2e` en verde; ARCHITECTURE §7 actualizado
+- **Referencias:** spec §9, §12, §3.2; ARCHITECTURE §7; ADR-0007; TASK-0065
+- **Evidencia (2026-09-22):** `GET /api/v1/vehiculos/:id/ubicaciones` (últimas 24 h por defecto,
+  `desde`/`hasta`/`limite`, máximo 2000) con un caso de API que cubre los cuatro roles: el
+  coordinador recibe los tres puntos ordenados del más reciente al más antiguo y con
+  coordenadas; el dueño de la placa, 200; otro asociado, 403 `FORBIDDEN_OWN_SCOPE`; el veedor,
+  403 `FORBIDDEN` (hace falta comprobarlo a mano: `exigir('vehiculos','R')` lo dejaría pasar
+  porque su concesión es `R*`, y un recorrido sin coordenadas no se puede pintar); `?limite=1`
+  devuelve un punto. Web: `paginas/Mapa.tsx` con Leaflet y teselas de OpenStreetMap
+  (`VITE_MAPA_TILES_URL` para cambiarlas), ruta `/mapa` perezosa y enlace en la barra solo para
+  quien recibe coordenadas; un punto por placa coloreado por frescura y, al tocarlo, la línea de
+  su recorrido. `pnpm --filter @asotracmet/web build` → `mapa-DkHcbhq7.js` 148,72 kB en su
+  propio trozo y **fuera del precache**: el service worker solo lista `index-*.js`,
+  `index-*.css` y workbox (13 entradas), así que «Mi turno» sin conexión no engorda y las
+  teselas nunca se guardan. E2E nuevo (teselas bloqueadas para no depender de la red ni molestar
+  al servidor público): el coordinador abre el mapa y ve el lienzo y «placas con ubicación»; al
+  veedor no le aparece ni el enlace. `pnpm check` → 40 archivos, 426 passed (41 skipped), lint 0
+  errores, formato limpio. `pnpm test:e2e` → 20 passed. `pnpm build:contrato` → «84 rutas, 89
+  esquemas (v1.1.0)».
+
+### TASK-0067 — Adaptador GPS real: Vía GPS (`gpsmobile.net`)
+
+- **Estado:** bloqueada
+- **Fase:** 4
+- **Prioridad:** media
+- **Contexto:** La plataforma que usan los propietarios es **Vía GPS** (viagps.co, Bogotá). No
+  opera plataforma propia: su portal es `https://gpsmobile.net/Default.aspx?userlogo=177` (el
+  `userlogo` identifica al revendedor). Reconocimiento público del 2026-09-22, sin credenciales:
+  IIS 10 con ASP.NET WebForms 4.0.30319, tema `App_Themes/theme7`, jQuery UI 1.8.6; sesión por
+  cookie `ASP.NET_SessionId`; el formulario (`id="Login"`, POST a `./Default.aspx?userlogo=177`)
+  lleva `txtUsername`, `txtPassword`, `btnSubmit=Ingresar` y los campos de estado de WebForms
+  `__VIEWSTATE`, `__VIEWSTATEGENERATOR`, `__EVENTVALIDATION` y `CheckJS1$hfClientJSEnabled`. No
+  hay captcha ni segundo factor, así que el acceso es automatizable: GET a la página para tomar
+  cookie y campos de estado, y POST con esos campos más usuario y clave. `/api` y `/swagger` no
+  existen (404) y las rutas `.aspx`/`.asmx` responden 302 al login, así que no hay API pública que
+  descubrir sin credenciales.
+  **Bloqueada** solo por una cuenta de prueba: falta saber qué página o petición devuelve las
+  posiciones una vez dentro, y eso se ve con las herramientas de desarrollo del navegador en una
+  sesión real. Conviene además pedir a Vía GPS una API o un usuario de solo lectura: el acceso
+  automatizado a una página puede chocar con sus términos de servicio y esa página puede cambiar
+  sin aviso.
+- **Criterio de done:**
+  - [ ] Procedimiento de inspección (qué petición devuelve las posiciones, con qué formato y en qué
+        zona horaria) anotado en `docs/runbooks/gps-agente.md`
+  - [ ] Adaptador `viagps` con cookie propia, timeout, un solo acceso por ciclo y errores tipados
+        (`credenciales_invalidas`, `formato_inesperado`)
+  - [ ] Fixtures anonimizadas de las respuestas reales y tests con `fetch` falso
+  - [ ] Verificado contra la cuenta de prueba, con evidencia de una corrida real
+- **Referencias:** spec §12, §19; ADR-0007; TASK-0064
+- **Evidencia:** _(pendiente)_
+
+### TASK-0068 — Adaptador GPS real de la segunda plataforma
+
+- **Estado:** bloqueada
+- **Fase:** 4
+- **Prioridad:** baja
+- **Contexto:** Igual que TASK-0067 para la segunda plataforma que usen los propietarios. Bloqueada
+  por los mismos tres requisitos.
+- **Criterio de done:**
+  - [ ] Adaptador, fixtures y tests como en TASK-0067
+  - [ ] Verificado contra una cuenta de prueba autorizada
+- **Referencias:** TASK-0064, TASK-0067
+- **Evidencia:** _(pendiente)_
+
+### TASK-0069 — Habeas data: supresión de las ubicaciones de un vehículo
+
+- **Estado:** hecha (2026-09-22)
+- **Fase:** 4
+- **Prioridad:** baja
+- **Contexto:** Ley 1581 de 2012 y spec §12: un propietario puede retirar la autorización que dio
+  para rastrear su vehículo. Hace falta una acción que borre su historial, con motivo,
+  re-autenticación y rastro en auditoría, y que el extracto del asociado incluya lo que se guarda.
+- **Criterio de done:**
+  - [x] `DELETE /api/v1/vehiculos/:id/ubicaciones` con motivo, re-autenticación y auditoría
+  - [x] El extracto de habeas data incluye el historial retenido
+  - [x] Test de API y contrato regenerado
+- **Referencias:** spec §12; ADR-0005, ADR-0007; TASK-0036, TASK-0063
+- **Evidencia (2026-09-22):** `DELETE /api/v1/vehiculos/:id/ubicaciones` con motivo obligatorio
+  y `exigirReauth`; el borrado corre con el rol de servicio (ADR-0005) y deja `gps.suprimir` en
+  la auditoría con la placa, el motivo y cuántas filas se fueron. El extracto del asociado
+  (`GET /me/extracto`) gana un resumen por placa (puntos guardados, desde cuándo y hasta
+  cuándo) y el texto de propósito nombra la ubicación del vehículo, su origen y su retención:
+  sin eso la autorización de los términos de asociado no sería informada (Ley 1581 de 2012).
+  Tres casos de API: sin re-autenticar responde 403 `REAUTH_REQUERIDA`; tras confirmar
+  identidad borra solo esa placa (las otras dos siguen) y queda auditado; un coordinador
+  recibe 403. Y un cuarto sobre el extracto: el asociado ve un punto de `FST189` desde el
+  instante de la lectura y el propósito menciona la ubicación. `pnpm check` → 40 archivos,
+  429 passed (41 skipped). `pnpm test:db` → 41 passed. `pnpm test:e2e` → 20 passed.
+  `pnpm build:contrato` → «84 rutas, 90 esquemas (v1.1.0)».
+
+### TASK-0070 — Aviso `gps.sin_senal` por la outbox
+
+- **Estado:** pendiente
+- **Fase:** 4
+- **Prioridad:** baja
+- **Contexto:** Cuando una placa activa lleva más de `gps_sin_senal_minutos` sin reportar, avisar a
+  HSEQ y al asociado por la outbox de avisos (spec §11, ADR-0006), con clave de idempotencia para
+  no repetir el aviso cada corrida. Depende de que TASK-0057 cierre, porque amplía el mismo check
+  de eventos de `notificaciones_outbox`.
+- **Criterio de done:**
+  - [ ] Evento nuevo con clave `gps.sin_senal:{vehiculoId}:{fecha}` y plantilla en español
+  - [ ] Migración que amplía el check de `notificaciones_outbox.evento`
+  - [ ] Test de idempotencia (dos corridas, un solo aviso)
+- **Referencias:** spec §11, §14; ADR-0006; TASK-0057, TASK-0063
+- **Evidencia:** _(pendiente)_
+
+### TASK-0071 — Bug: `CodigoTr.tsx` no compila (`data-testid` sobre `resto`)
+
+- **Estado:** hecha (2026-09-22)
+- **Fase:** 1
+- **Prioridad:** alta
+- **Contexto:** Encontrado al verificar TASK-0062 (RULE-007). `pnpm typecheck` falla en
+  `apps/web/src/componentes/ui/CodigoTr.tsx(26,22)` con `TS7053`: el componente lee
+  `resto['data-testid']` sobre un tipo de props de `button`, que no declara esa clave. El archivo
+  es parte del sistema de diseño en curso (TASK-0045) y todavía no está versionado, así que
+  `pnpm check` está en rojo para todo el repositorio y ninguna tarea puede cerrarse con la
+  verificación de RULE-018 completa.
+- **Criterio de done:**
+  - [x] El tipo de props de `CodigoTr` declara `data-testid` (o se lee con un tipo que lo admita)
+  - [x] `pnpm check` en verde en un árbol sin otros cambios
+- **Referencias:** AGENTS RULE-018, RULE-019; TASK-0045, TASK-0062
+- **Evidencia (2026-09-22):** `Props` declara `'data-testid'?: string` con el porqué en un
+  comentario (JSX admite cualquier `data-*`; el tipo de props del botón no lo declara). Antes:
+  `pnpm typecheck` → `src/componentes/ui/CodigoTr.tsx(26,22): error TS7053`. Después:
+  `pnpm check` → 38 archivos, 400 passed (41 skipped), lint 0 errores, formato limpio.
+  `pnpm test:e2e` → 16 passed.
 
 ## Plantilla
 

@@ -4,12 +4,14 @@ import {
   CLASES_COLA,
   CLASES_VEHICULO,
   ESTADOS_DOCUMENTO,
+  FRESCURAS_GPS,
   ESTADOS_OFERTA,
   ESTADOS_RECAUDO,
   ESTADOS_TR,
   ESTADOS_VEHICULO,
   ESTADOS_VIAJE,
 } from './estados.js';
+import { CODIGOS_MOTIVO_BLOQUEO } from './motivos-bloqueo.js';
 import { EVENTOS_NOTIFICACION } from './notificaciones.js';
 import { ROLES } from './roles.js';
 
@@ -295,7 +297,11 @@ export const VistaHabilitacionSchema = z.object({
   vehiculoId: z.string(),
   clienteId: z.string(),
   apto: z.boolean(),
+  /** Nombre del catálogo de motivos (TASK-0059): lo único que llega a la cola y al acta. */
   motivoBloqueo: TextoONulo,
+  motivoBloqueoCodigo: z.enum(CODIGOS_MOTIVO_BLOQUEO).nullable(),
+  /** Detalle interno de HSEQ; puede ser sensible y solo viaja en la ficha (spec §12). */
+  nota: TextoONulo,
   cliente: TextoONulo,
   clienteNombre: TextoONulo,
 });
@@ -313,6 +319,27 @@ export const VistaConductorFichaSchema = z.object({
 });
 export type VistaConductorFicha = z.infer<typeof VistaConductorFichaSchema>;
 
+/**
+ * Última ubicación conocida de una placa (ADR-0007). `minutosDesde` y `frescura` los calcula la
+ * API con su reloj, no el navegador. Con `enmascarada` en cierto (veedor, `R*`) las coordenadas y
+ * la velocidad vienen en nulo: solo se sabe si el camión reporta y hace cuánto (criterio §20.11).
+ */
+export const VistaUbicacionSchema = z.object({
+  vehiculoId: z.string(),
+  placa: z.string(),
+  latitud: NumeroONulo,
+  longitud: NumeroONulo,
+  velocidadKmh: NumeroONulo,
+  rumboGrados: NumeroONulo,
+  proveedor: z.string(),
+  capturadaEn: z.string(),
+  recibidaEn: z.string(),
+  minutosDesde: z.number(),
+  frescura: z.enum(FRESCURAS_GPS),
+  enmascarada: z.boolean(),
+});
+export type VistaUbicacion = z.infer<typeof VistaUbicacionSchema>;
+
 export const VistaFichaSchema = z.object({
   vehiculo: VistaVehiculoRegistroSchema,
   asociado: VistaAsociadoSchema.nullable(),
@@ -321,6 +348,8 @@ export const VistaFichaSchema = z.object({
   habilitaciones: z.array(VistaHabilitacionSchema),
   semaforo: EstadoDocumentoSchema,
   enCola: MiPosicionSchema.nullable(),
+  /** Última ubicación GPS, o nulo si la placa nunca reportó (ADR-0007). */
+  ubicacion: VistaUbicacionSchema.nullable(),
 });
 export type VistaFicha = z.infer<typeof VistaFichaSchema>;
 

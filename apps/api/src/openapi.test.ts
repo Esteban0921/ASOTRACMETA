@@ -25,6 +25,7 @@ import {
   VistaColaSchema,
   VistaDocumentoSchema,
   VistaFichaSchema,
+  VistaUbicacionSchema,
   VistaOfertaSchema,
   VistaRequerimientoSchema,
   VistaResumenMesSchema,
@@ -32,6 +33,7 @@ import {
   VistaVehiculoSchema,
 } from '@asotracmet/shared';
 import { construirApp, type AppConstruida } from './app.js';
+import { TOKEN_GPS_DESARROLLO } from './config.js';
 import { MensajeriaMemoria } from './auth/mensajeria.js';
 import { codigoTotp } from './auth/totp.js';
 import { CONTRATO } from './openapi/contrato.js';
@@ -99,6 +101,27 @@ beforeAll(async () => {
   });
   app = construida.app;
   await app.ready();
+  // Ubicaciones (ADR-0007): se ingieren por la ruta real con el token de desarrollo, para que la
+  // lista de `/vehiculos/ubicaciones` no venga vacía sin tocar la semilla. `capturadaEn` sale del
+  // reloj fijo del test (RULE-020), si no la ingesta la descartaría por futura o por vieja.
+  await app.inject({
+    method: 'POST',
+    url: '/api/v1/gps/ubicaciones',
+    headers: { authorization: `Bearer ${TOKEN_GPS_DESARROLLO}` },
+    payload: {
+      loteId: '0199b1f0-2222-7000-8000-00000000000c',
+      cuentaId: 'contrato',
+      ubicaciones: [
+        {
+          placa: 'FST189',
+          latitud: 4.1421,
+          longitud: -73.6266,
+          capturadaEn: reloj.ahora().toISOString(),
+          proveedor: 'SATRACK',
+        },
+      ],
+    },
+  });
   for (const email of [
     'superadmin@asotracmet.test',
     'ops@asotracmet.test',
@@ -263,6 +286,7 @@ describe('contrato OpenAPI', () => {
     ['/api/v1/audit', 'superadmin@asotracmet.test', EventoAuditoriaSchema.array()],
     ['/api/v1/asociados', 'superadmin@asotracmet.test', VistaAsociadoSchema.array()],
     ['/api/v1/vehiculos/semaforo', 'superadmin@asotracmet.test', SemaforoPlacaSchema.array()],
+    ['/api/v1/vehiculos/ubicaciones', 'ops@asotracmet.test', VistaUbicacionSchema.array()],
     ['/api/v1/vehiculos/veh-FST189/ficha', 'superadmin@asotracmet.test', VistaFichaSchema],
     ['/api/v1/transportadoras', 'finance@asotracmet.test', TransportadoraSchema.array()],
     ['/api/v1/tipos-documento', 'superadmin@asotracmet.test', TipoDocumentoSchema.array()],

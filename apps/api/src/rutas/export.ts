@@ -8,7 +8,11 @@ import type { RepositorioMaestros } from '../maestros/tipos.js';
 import { nombreAsociado } from '../maestros/vistas.js';
 import type { RepositorioViajes } from '../viajes/tipos.js';
 
+import type { RepositorioUbicaciones } from '../gps/tipos.js';
+
 export interface DepsExport {
+  /** Resumen de ubicaciones para el extracto de habeas data (TASK-0069). */
+  ubicaciones: RepositorioUbicaciones;
   consultas: Consultas;
   viajes: RepositorioViajes;
   maestros: RepositorioMaestros;
@@ -35,11 +39,11 @@ export function marcaDeAgua(email: string, rol: string, instante: string): strin
 /** Textos de habeas data (Ley 1581 de 2012): propósito, acceso y cancelación. */
 export const HABEAS_DATA = {
   proposito:
-    'ASOTRACMET trata tus datos (identificación, contacto, placas, documentos de la flota, turnos, TR, viajes y recaudos) con el único fin de administrar el enturnamiento gremial, la asignación de servicios y el recaudo del aporte sobre el flete.',
+    'ASOTRACMET trata tus datos (identificación, contacto, placas, documentos de la flota, turnos, TR, viajes, recaudos y la ubicación GPS del vehículo) con el único fin de administrar el enturnamiento gremial, la asignación de servicios y el recaudo del aporte sobre el flete. La ubicación se toma de la plataforma de rastreo que contrató el propietario, se refresca cada pocos minutos y se conserva un tiempo limitado que fija el parámetro de retención; pasado ese plazo se borra sola, salvo la última posición conocida de cada placa.',
   acceso:
     'Puedes consultar en cualquier momento tu posición en la cola, tus ofertas, tus TR, tus viajes y tus documentos desde "Mi turno", y pedir este extracto. Cada extracto queda registrado en la auditoría.',
   cancelacion:
-    'Puedes pedir la corrección o supresión de tus datos escribiendo a la coordinación de ASOTRACMET; los registros de TR y recaudo ya cumplidos se conservan el tiempo que exige la ley y los estatutos de la asociación, anonimizando lo demás.',
+    'Puedes pedir la corrección o supresión de tus datos, incluido el historial de ubicaciones de tus placas, escribiendo a la coordinación de ASOTRACMET; los registros de TR y recaudo ya cumplidos se conservan el tiempo que exige la ley y los estatutos de la asociación, anonimizando lo demás.',
 } as const;
 
 const CABECERAS = [
@@ -182,6 +186,15 @@ export function rutasExport(app: FastifyInstance, deps: DepsExport): void {
           fechaPago: r.fechaPago,
           referencia: r.referencia,
         })),
+        // Habeas data (TASK-0069): qué se guarda de la ubicación de sus placas y desde cuándo.
+        ubicaciones: (await deps.ubicaciones.resumenPorVehiculo(vehiculos.map((v) => v.id))).map(
+          (r) => ({
+            placa: vehiculos.find((v) => v.id === r.vehiculoId)?.placa ?? null,
+            puntos: r.puntos,
+            desde: r.desde,
+            hasta: r.hasta,
+          }),
+        ),
         habeasData: HABEAS_DATA,
       };
       await auditar(actor, 'habeas.extracto', 'asociados', usuario.asociadoId, {

@@ -27,6 +27,9 @@ services:
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
       S3_SECRET_KEY: ${S3_SECRET_KEY:-}
       S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-false}
+      # Ingesta del agente GPS (ADR-0007). Sin token, la ruta responde 401 y no se guarda nada.
+      GPS_INGESTA_TOKEN: ${GPS_INGESTA_TOKEN:-}
+      GPS_INGESTA_TOKEN_ANTERIOR: ${GPS_INGESTA_TOKEN_ANTERIOR:-}
     ports:
       - '${APP_PORT:-127.0.0.1:3001}:3001'
     volumes:
@@ -35,6 +38,44 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+
+  # Agente GPS (ADR-0007, TASK-0064): proceso satélite, misma imagen y otro comando. Se levanta
+  # aparte (`--profile gps`) porque es el único que ve las credenciales de las plataformas de los
+  # propietarios, y porque una página de GPS caída no debe poder tocar la operación.
+  #   docker compose -f infra/compose.prod.yaml --env-file .env.prod --profile gps up -d gps-agente
+  # La imagen la construye el servicio `app` (`up -d --build app`): aquí no se vuelve a construir
+  # ni se busca en ningún registro.
+  gps-agente:
+    image: asotracmet:latest
+    pull_policy: never
+    profiles: ['gps']
+    command: ['node', 'scripts/gps-agente.mjs']
+    restart: unless-stopped
+    # La imagen trae un HEALTHCHECK que consulta :3001; este proceso no escucha en ningún puerto.
+    healthcheck:
+      disable: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      GPS_API_URL: http://app:3001
+      GPS_INGESTA_TOKEN: ${GPS_INGESTA_TOKEN:?GPS_INGESTA_TOKEN}
+      GPS_CUENTAS_ARCHIVO: /run/secrets/gps-cuentas.json
+      GPS_INTERVALO_MINUTOS: ${GPS_INTERVALO_MINUTOS:-20}
+      GPS_TIMEOUT_MS: ${GPS_TIMEOUT_MS:-15000}
+      GPS_CONCURRENCIA: ${GPS_CONCURRENCIA:-3}
+      GPS_PROVEEDOR_FORZADO: ${GPS_PROVEEDOR_FORZADO:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      # El archivo vive en el host (0400, del usuario del contenedor) y nunca en la base ni en git.
+      - ${GPS_CUENTAS_ARCHIVO_HOST:-/etc/asotracmet/gps-cuentas.json}:/run/secrets/gps-cuentas.json:ro
+    depends_on:
+      app:
         condition: service_healthy
 
   postgres:

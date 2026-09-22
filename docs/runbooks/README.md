@@ -11,3 +11,4 @@ cómo actuar sin saltarse la auditoría. Señales: `/healthz`, `/readyz`, `/metr
 | Un asociado ve placas o TR que no son suyos    | [member-ve-placa-ajena.md](member-ve-placa-ajena.md) |
 | Restaurar un backup / simulacro trimestral     | [restore-en-staging.md](restore-en-staging.md)       |
 | Salud, métricas y trazas                       | [observabilidad.md](observabilidad.md)               |
+| La web dice «sin señal» o el agente GPS calla  | [gps-agente.md](gps-agente.md)                       |

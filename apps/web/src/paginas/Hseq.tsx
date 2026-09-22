@@ -11,6 +11,7 @@ import {
 import { api, codigoDeError } from '../api/cliente';
 import { descargarSoporte, subirSoporte } from '../api/soportes';
 import type {
+  VistaUbicacion,
   AlertaDocumento,
   Cliente,
   SemaforoPlaca,
@@ -19,6 +20,7 @@ import type {
   VistaDocumento,
   VistaFicha,
 } from '../api/tipos';
+import { UltimaUbicacion } from '../componentes/UltimaUbicacion';
 import { useSesion } from '../sesion/contexto';
 import {
   textoEstadoDocumento,
@@ -32,6 +34,9 @@ import {
  * HSEQ (spec §9.2): ficha de placa con documentos y semáforo 30/7/vencido, habilitaciones por
  * cliente con motivo, conductores y estado. La cola reacciona sola a lo que se guarde aquí.
  */
+// La ubicación cambia cada `gps_intervalo_minutos` (20 por defecto): no necesita el refresco
+// corto del resto de la pantalla.
+const REFRESCO_UBICACIONES_MS = 60_000;
 export function Hseq() {
   const { sesion } = useSesion();
   const rol = sesion?.usuario.rol ?? 'viewer';
@@ -59,6 +64,11 @@ export function Hseq() {
   const placas = useQuery({
     queryKey: ['hseq', 'semaforo'],
     queryFn: () => api<SemaforoPlaca[]>('/vehiculos/semaforo'),
+  });
+  const ubicaciones = useQuery({
+    queryKey: ['hseq', 'ubicaciones'],
+    queryFn: () => api<VistaUbicacion[]>('/vehiculos/ubicaciones'),
+    refetchInterval: REFRESCO_UBICACIONES_MS,
   });
   const ficha = useQuery({
     queryKey: ['hseq', 'ficha', seleccionada],
@@ -191,6 +201,8 @@ export function Hseq() {
   }
 
   const tiposVehiculo = tipos.data?.filter((t) => t.aplicaA === 'vehiculo') ?? [];
+  // Última ubicación por placa, para que la lista de la flota diga de un vistazo quién reporta.
+  const ubicacionPorVehiculo = new Map((ubicaciones.data ?? []).map((u) => [u.vehiculoId, u]));
   const datos = ficha.data;
 
   return (
@@ -288,6 +300,11 @@ export function Hseq() {
               <span className="detalle">
                 {p.clase} · {p.asociadoNombre ?? ''} · {textoEstadoVehiculo(p.estado)}
               </span>
+              <UltimaUbicacion
+                ubicacion={ubicacionPorVehiculo.get(p.id) ?? null}
+                placa={p.placa}
+                variante="chip"
+              />{' '}
               <span
                 className={`badge ${tonoSemaforo(p.semaforo)}`}
                 data-testid={`hseq-semaforo-${p.placa}`}
@@ -317,6 +334,7 @@ export function Hseq() {
                 {datos.asociado?.nombre ?? 'Sin asociado'} · {datos.asociado?.documento ?? ''} ·{' '}
                 {textoEstadoVehiculo(datos.vehiculo.estado)}
               </p>
+              <UltimaUbicacion ubicacion={datos.ubicacion} placa={datos.vehiculo.placa} />
               <p className="detalle" data-testid="ficha-cola">
                 {datos.enCola
                   ? textoPosicion(datos.enCola.claseCola, datos.enCola.posicion, datos.enCola.total)

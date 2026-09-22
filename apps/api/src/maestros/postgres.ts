@@ -1,5 +1,10 @@
 import type pg from 'pg';
-import type { ClaseCola, ClaseVehiculo, EstadoVehiculo } from '@asotracmet/shared';
+import {
+  esCodigoMotivoBloqueo,
+  type ClaseCola,
+  type ClaseVehiculo,
+  type EstadoVehiculo,
+} from '@asotracmet/shared';
 import { enEscrituraPg, enLecturaPg } from '../persistencia/postgres.js';
 import type {
   AsociadoRegistro,
@@ -491,7 +496,12 @@ export class MaestrosPostgres implements RepositorioMaestros {
       vehiculoId: txt(f.vehiculo_id),
       clienteId: txt(f.cliente_id),
       apto: f.apto === true,
+      // El check de la columna (0020) garantiza el catálogo; el guard solo tipa lo que ya es cierto.
+      motivoBloqueoCodigo: esCodigoMotivoBloqueo(f.motivo_bloqueo_codigo)
+        ? f.motivo_bloqueo_codigo
+        : null,
       motivoBloqueo: txtN(f.motivo_bloqueo),
+      nota: txtN(f.motivo_bloqueo_nota),
       requisitos: (f.requisitos as Record<string, unknown> | null) ?? null,
       actualizadoEn: fecha(f.updated_at),
     }));
@@ -499,16 +509,21 @@ export class MaestrosPostgres implements RepositorioMaestros {
 
   async guardarHabilitacion(h: HabilitacionRegistro): Promise<void> {
     await this.escribir(
-      `insert into habilitaciones (id, vehiculo_id, cliente_id, apto, motivo_bloqueo, requisitos)
-       values ($1, $2, $3, $4, $5, $6::jsonb)
+      `insert into habilitaciones (id, vehiculo_id, cliente_id, apto, motivo_bloqueo,
+                                   motivo_bloqueo_codigo, motivo_bloqueo_nota, requisitos)
+       values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
        on conflict (vehiculo_id, cliente_id) do update set apto = excluded.apto,
-         motivo_bloqueo = excluded.motivo_bloqueo, requisitos = excluded.requisitos, updated_at = now()`,
+         motivo_bloqueo = excluded.motivo_bloqueo, motivo_bloqueo_codigo = excluded.motivo_bloqueo_codigo,
+         motivo_bloqueo_nota = excluded.motivo_bloqueo_nota, requisitos = excluded.requisitos,
+         updated_at = now()`,
       [
         h.id,
         h.vehiculoId,
         h.clienteId,
         h.apto,
         h.motivoBloqueo,
+        h.motivoBloqueoCodigo,
+        h.nota,
         h.requisitos ? JSON.stringify(h.requisitos) : null,
       ],
     );

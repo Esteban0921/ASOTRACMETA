@@ -35,6 +35,7 @@ import {
   FiltroAuditSchema,
   FiltroColaSchema,
   FiltroDocumentosSchema,
+  FiltroHistorialGpsSchema,
   FiltroMaestrosSchema,
   FiltroNotificacionesSchema,
   FiltroOfertasSchema,
@@ -44,6 +45,9 @@ import {
   FiltroTrsSchema,
   FiltroViajesSchema,
   GuardarHabilitacionSchema,
+  LoteUbicacionesGpsSchema,
+  ResultadoIngestaGpsSchema,
+  VistaUbicacionSchema,
   IntervencionSchema,
   LiquidarViajeSchema,
   LoginSchema,
@@ -175,6 +179,8 @@ export const NOMBRES_ESQUEMAS = new Map<ZodType, string>(
     PreferenciasNotificacion: PreferenciasNotificacionSchema,
     FiltroNotificaciones: FiltroNotificacionesSchema,
     SolicitarSoporte: SolicitarSoporteSchema,
+    LoteUbicacionesGps: LoteUbicacionesGpsSchema,
+    FiltroHistorialGps: FiltroHistorialGpsSchema,
     ConfirmarSoporte: ConfirmarSoporteSchema,
   }).map(([nombre, schema]) => [schema, nombre]),
 );
@@ -1155,11 +1161,71 @@ export const CONTRATO: readonly EntradaContrato[] = [
     metodo: 'post',
     ruta: '/api/v1/jobs/avisos',
     etiqueta: 'Jobs',
-    resumen: 'Avisos por tiempo: oferta por expirar, documento por vencer, digest de recaudo',
+    resumen:
+      'Avisos por tiempo: oferta por expirar, documento por vencer, digest de recaudo y los proactivos de la cola (próximo turno, documento que bloquea, sin elegibles)',
     guard: 'cola U',
     respuesta: una(
       'ResumenAvisos',
-      z.object({ porExpirar: z.number(), documentos: z.number(), recaudos: z.boolean() }),
+      z.object({
+        porExpirar: z.number(),
+        documentos: z.number(),
+        recaudos: z.boolean(),
+        proximos: z.number(),
+        bloqueanTurno: z.number(),
+        sinElegibles: z.number(),
+      }),
     ),
+  },
+
+  // --- Ubicación GPS (ADR-0007, spec §19 fase 4) ----------------------------------------------
+  {
+    metodo: 'post',
+    ruta: '/api/v1/gps/ubicaciones',
+    etiqueta: 'GPS',
+    resumen:
+      'Ingesta de ubicaciones del agente satélite: idempotente por placa e instante, ignora placas desconocidas y vehículos no activos, y devuelve cada cuántos minutos volver',
+    guard: 'token de servicio (GPS_INGESTA_TOKEN)',
+    publica: true,
+    body: LoteUbicacionesGpsSchema,
+    respuesta: una('ResultadoIngestaGps', ResultadoIngestaGpsSchema),
+  },
+  {
+    metodo: 'get',
+    ruta: '/api/v1/vehiculos/ubicaciones',
+    etiqueta: 'GPS',
+    resumen:
+      'Última ubicación conocida por placa; el asociado solo ve las suyas y el veedor la recibe sin coordenadas',
+    guard: 'vehiculos R (own, R*)',
+    respuesta: lista('VistaUbicacion', VistaUbicacionSchema),
+  },
+  {
+    metodo: 'get',
+    ruta: '/api/v1/vehiculos/:id/ubicaciones',
+    etiqueta: 'GPS',
+    resumen:
+      'Recorrido de una placa (últimas 24 h por defecto); el asociado solo el suyo y el veedor no accede',
+    guard: 'vehiculos R (own)',
+    query: FiltroHistorialGpsSchema,
+    respuesta: lista('VistaUbicacion', VistaUbicacionSchema),
+  },
+  {
+    metodo: 'delete',
+    ruta: '/api/v1/vehiculos/:id/ubicaciones',
+    etiqueta: 'GPS',
+    resumen:
+      'Habeas data: borra todo el historial de ubicaciones de una placa, con motivo y re-autenticación (auditado)',
+    guard: 'vehiculos D',
+    reauth: true,
+    body: MotivoSchema,
+    respuesta: una('SupresionUbicaciones', z.object({ borradas: z.number() })),
+  },
+  {
+    metodo: 'post',
+    ruta: '/api/v1/jobs/purgar-ubicaciones',
+    etiqueta: 'GPS',
+    resumen:
+      'Purga las ubicaciones anteriores a `gps_retencion_dias` conservando la última de cada placa (auditado)',
+    guard: 'cola U',
+    respuesta: una('PurgaUbicaciones', z.object({ borradas: z.number(), corte: z.string() })),
   },
 ];

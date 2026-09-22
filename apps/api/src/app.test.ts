@@ -1425,17 +1425,20 @@ describe('maestros: vehículos, documentos, habilitaciones, asociados, catálogo
       ).statusCode,
     ).toBe(200);
 
+    // Motivo del catálogo cerrado (TASK-0059): el texto que ve la cola es el nombre del catálogo.
     const bloqueo = await app.inject({
       method: 'PUT',
       url: '/api/v1/vehiculos/veh-FST189/habilitaciones/cli-hlb',
       headers: conToken(hseq),
-      payload: { apto: false, motivoBloqueo: 'Curso HLB vencido' },
+      payload: { apto: false, motivoBloqueoCodigo: 'CURSO_VENCIDO' },
     });
     expect(bloqueo.statusCode, bloqueo.body).toBe(200);
     expect(bloqueo.json()).toMatchObject({
       apto: false,
       cliente: 'HLB',
-      motivoBloqueo: 'Curso HLB vencido',
+      motivoBloqueoCodigo: 'CURSO_VENCIDO',
+      motivoBloqueo: 'Curso del cliente vencido',
+      nota: null,
     });
     const sinMotivo = await app.inject({
       method: 'PUT',

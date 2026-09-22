@@ -11,6 +11,8 @@ export const CODIGOS_ERROR = {
   NOT_FOUND: 404,
   TOTP_NO_ENROLADO: 409,
   COLA_LOCKED: 409,
+  /** Acta de turno (brief §5): la cola cambió entre la vista previa y el clic; sin efectos. */
+  CANDIDATO_CAMBIO: 409,
   EMAIL_EN_USO: 409,
   PLACA_EN_USO: 409,
   DOCUMENTO_EN_USO: 409,

@@ -54,6 +54,26 @@ export default tseslint.config(
     },
   },
   {
+    // Agente GPS (ADR-0007, TASK-0064): corre en su propio proceso, fuera de la API. No puede
+    // depender de Fastify, del pool de Postgres ni de Redis, y escribe por consola porque no
+    // tiene el logger de Fastify.
+    files: ['apps/api/src/gps/agente/**/*.ts', 'scripts/gps-agente.ts'],
+    rules: {
+      'no-console': 'off',
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['fastify', 'pg', 'redis', 'ioredis', 'nodemailer'],
+              message: 'El agente GPS corre fuera de la API (ADR-0007): sin HTTP server ni DB.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['apps/web/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks, 'react-refresh': reactRefresh },
     languageOptions: { globals: { ...globals.browser } },

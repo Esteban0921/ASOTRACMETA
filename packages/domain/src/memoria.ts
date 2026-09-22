@@ -10,6 +10,7 @@ import type {
   Asociado,
   Cliente,
   ColaPosicion,
+  Descarte,
   Destino,
   Documento,
   EventoAuditoria,
@@ -19,6 +20,7 @@ import type {
   NuevaNotificacion,
   NuevoEventoAuditoria,
   Oferta,
+  OfertaSalto,
   Requerimiento,
   Tr,
   Vehiculo,
@@ -39,6 +41,8 @@ export interface EstadoMemoria {
   posiciones: ColaPosicion[];
   requerimientos: Requerimiento[];
   ofertas: Oferta[];
+  /** Acta de turno (brief §5): saltos de cada oferta; el rollback por snapshot también los deshace. */
+  saltos: OfertaSalto[];
   trs: Tr[];
   auditoria: EventoAuditoria[];
   /** Outbox de avisos (spec §11): forma parte del estado, así el rollback también la deshace. */
@@ -58,6 +62,7 @@ export function estadoVacio(parametros: Parametros): EstadoMemoria {
     posiciones: [],
     requerimientos: [],
     ofertas: [],
+    saltos: [],
     trs: [],
     auditoria: [],
     outbox: [],
@@ -211,6 +216,17 @@ class TransaccionMemoria implements Transaccion {
 
   async ofertasAbiertasVencidas(ahora: string): Promise<Oferta[]> {
     return this.s.ofertas.filter((o) => o.estado === 'abierta' && o.expiraEn <= ahora);
+  }
+
+  async guardarSaltos(ofertaId: string, descartes: readonly Descarte[]): Promise<void> {
+    const creadoEn = this.reloj.ahora().toISOString();
+    for (const descarte of descartes) {
+      const repetido = this.s.saltos.some(
+        (s) => s.ofertaId === ofertaId && s.vehiculoId === descarte.vehiculoId,
+      );
+      if (repetido) continue;
+      this.s.saltos.push({ id: this.ids.nuevo(), ofertaId, ...descarte, creadoEn });
+    }
   }
 
   async tr(id: string): Promise<Tr | undefined> {

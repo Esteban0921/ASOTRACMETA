@@ -16,8 +16,9 @@ import {
 } from '@asotracmet/domain';
 import { MensajeriaMemoria, type Mensajeria } from './auth/mensajeria.js';
 import { registrarAuth } from './auth/plugin.js';
+import { tokenServicioValido } from './auth/token-servicio.js';
 import { ServicioAuth } from './auth/servicio.js';
-import { fechaLocal } from '@asotracmet/shared';
+import { fechaLocal, frescuraDe, type Parametros } from '@asotracmet/shared';
 import { cargarConfig, type Config } from './config.js';
 import { LockRedis, conLockDistribuido, type AlmacenLock } from './lock-cola.js';
 import { mensajeriaDeConfig } from './mensajeria/proveedores.js';
@@ -45,6 +46,7 @@ import { rutasCatalogos } from './rutas/catalogos.js';
 import { rutasOperacion } from './rutas/operacion.js';
 import { rutasMaestros } from './rutas/maestros.js';
 import { rutasExport } from './rutas/export.js';
+import { rutasGps } from './rutas/gps.js';
 import { rutasTablero } from './rutas/tablero.js';
 import { rutasUsuarios } from './rutas/usuarios.js';
 import { rutasViajes } from './rutas/viajes.js';
@@ -92,6 +94,25 @@ export interface AppConstruida {
 }
 
 const IDS_UUID_V7: GeneradorIds = { nuevo: () => uuidv7() };
+
+/** Placas activas cuya última lectura ya no es fresca, contando las que nunca reportaron. */
+function placasSinSenal(
+  vehiculos: readonly { id: string; estado: string }[],
+  ultimas: readonly { vehiculoId: string; capturadaEn: string }[],
+  ahora: Date,
+  parametros: Parametros,
+): number {
+  const porVehiculo = new Map(ultimas.map((u) => [u.vehiculoId, u.capturadaEn]));
+  return vehiculos.filter((v) => {
+    if (v.estado !== 'activo') return false;
+    const capturada = porVehiculo.get(v.id);
+    const minutos =
+      capturada === undefined
+        ? null
+        : Math.floor((ahora.getTime() - new Date(capturada).getTime()) / 60_000);
+    return frescuraDe(minutos, parametros) === 'sin_senal';
+  }).length;
+}
 
 export async function construirApp(opciones: OpcionesApp = {}): Promise<AppConstruida> {
   const config: Config = { ...cargarConfig(), ...opciones.config };
@@ -190,6 +211,8 @@ export async function construirApp(opciones: OpcionesApp = {}): Promise<AppConst
         maestros: almacenamiento.maestros,
         viajes: almacenamiento.viajes,
         reloj,
+        // Avisos proactivos (TASK-0057): leen la foto de la cola, nunca la mutan.
+        motor,
       },
       fechaLocal(reloj.ahora(), timezone),
     );
@@ -279,21 +302,47 @@ export async function construirApp(opciones: OpcionesApp = {}): Promise<AppConst
 
   // Métricas Prometheus (§15), sin PII. Con METRICS_TOKEN exige el bearer.
   app.get('/metrics', async (req, reply) => {
-    if (config.metricsToken && req.headers.authorization !== `Bearer ${config.metricsToken}`) {
+    // Sigue siendo pública sin `METRICS_TOKEN`; con él, comparación en tiempo constante.
+    if (
+      config.metricsToken &&
+      !tokenServicioValido(req.headers.authorization, [config.metricsToken])
+    ) {
       throw new ErrorDominio('UNAUTHORIZED', 'Token de métricas inválido');
     }
-    const { timezone } = await almacenamiento.consultas.parametros();
-    const hoy = fechaLocal(reloj.ahora(), timezone);
-    const [abiertas, declinadas] = await Promise.all([
-      almacenamiento.consultas.ofertas({ estado: 'abierta' }),
-      almacenamiento.consultas.ofertas({ estado: 'declinada' }),
-    ]);
+    const parametrosMetricas = await almacenamiento.consultas.parametros();
+    const hoy = fechaLocal(reloj.ahora(), parametrosMetricas.timezone);
+    const [abiertas, declinadas, ultimaRecepcion, ultimasUbicaciones, vehiculosActivos] =
+      await Promise.all([
+        almacenamiento.consultas.ofertas({ estado: 'abierta' }),
+        almacenamiento.consultas.ofertas({ estado: 'declinada' }),
+        almacenamiento.ubicaciones.ultimaRecepcion(),
+        almacenamiento.ubicaciones.ultimas(),
+        almacenamiento.maestros.vehiculos(),
+      ]);
     const declinacionesHoy = declinadas.filter(
-      (o) => o.respondidaEn && fechaLocal(new Date(o.respondidaEn), timezone) === hoy,
+      (o) =>
+        o.respondidaEn && fechaLocal(new Date(o.respondidaEn), parametrosMetricas.timezone) === hoy,
     ).length;
-    return reply
-      .type('text/plain; version=0.0.4; charset=utf-8')
-      .send(metricas.exponer({ ofertasAbiertas: abiertas.length, declinacionesHoy }));
+    return reply.type('text/plain; version=0.0.4; charset=utf-8').send(
+      metricas.exponer({
+        ofertasAbiertas: abiertas.length,
+        declinacionesHoy,
+        // "¿Llega algo del agente GPS?" y "¿cuántas placas no reportan?" (ADR-0007).
+        gpsUltimoLoteSegundos:
+          ultimaRecepcion === null
+            ? null
+            : Math.max(
+                0,
+                Math.round((reloj.ahora().getTime() - new Date(ultimaRecepcion).getTime()) / 1000),
+              ),
+        gpsPlacasSinSenal: placasSinSenal(
+          vehiculosActivos,
+          ultimasUbicaciones,
+          reloj.ahora(),
+          parametrosMetricas,
+        ),
+      }),
+    );
   });
 
   rutasAuth(app, { servicio: servicioAuth, loginRateLimitMax: config.loginRateLimitMax });
@@ -307,6 +356,7 @@ export async function construirApp(opciones: OpcionesApp = {}): Promise<AppConst
   });
   rutasMaestros(app, {
     maestros: almacenamiento.maestros,
+    ubicaciones: almacenamiento.ubicaciones,
     motor,
     uow,
     consultas: almacenamiento.consultas,
@@ -338,6 +388,7 @@ export async function construirApp(opciones: OpcionesApp = {}): Promise<AppConst
     reloj,
   });
   rutasExport(app, {
+    ubicaciones: almacenamiento.ubicaciones,
     consultas: almacenamiento.consultas,
     viajes: almacenamiento.viajes,
     maestros: almacenamiento.maestros,
@@ -365,6 +416,24 @@ export async function construirApp(opciones: OpcionesApp = {}): Promise<AppConst
     ids,
     maxBytes: config.soporteMaxBytes,
     urlSegundos: config.soporteUrlSegundos,
+  });
+
+  // Ubicación GPS (ADR-0007, TASK-0062): el agente satélite entrega lotes con token de servicio.
+  // Sin tokens configurados la ruta existe pero responde 401: un satélite no tumba la API.
+  if (config.gpsIngestaTokens.some((t) => t.length < 32)) {
+    app.log.warn('GPS_INGESTA_TOKEN corto: usa al menos 32 caracteres (openssl rand -base64 32)');
+  }
+  rutasGps(app, {
+    ubicaciones: almacenamiento.ubicaciones,
+    maestros: almacenamiento.maestros,
+    consultas: almacenamiento.consultas,
+    uow,
+    reloj,
+    ids,
+    tokens: config.gpsIngestaTokens,
+    rateLimitMax: config.gpsIngestaRateLimitMax,
+    metricas,
+    log: (datos, mensaje) => app.log.info(datos, mensaje),
   });
 
   if (config.modoE2e) {

@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import type { EventoAuditoria } from '@asotracmet/domain';
+import type { EventoAuditoria, MotivoNoElegible } from '@asotracmet/domain';
 import {
   ESTADOS_TR_VIGENTES,
   ParametrosSchema,
@@ -16,11 +16,15 @@ import type {
   FiltroRequerimientos,
   FiltroTrs,
   MiPosicion,
+  RangoFechas,
   VistaCliente,
   VistaDestino,
   VistaMotivo,
   VistaOferta,
   VistaRequerimiento,
+  VistaSalto,
+  VistaSaltoAgregado,
+  VistaSaltoPropio,
   VistaTr,
   VistaVehiculo,
 } from './tipos.js';
@@ -130,6 +134,29 @@ function aTr(f: Fila): VistaTr {
     cliente: textoONulo(f.cliente),
     destino: textoONulo(f.destino),
     etiqueta: placa ? etiquetaAsociadoPlaca(nombre ?? 'ASOCIADO DESCONOCIDO', placa) : null,
+  };
+}
+
+// Acta de turno (brief §5): un salto con la placa y la etiqueta del asociado de esa placa.
+const SELECT_SALTO = `
+  select s.id, s.oferta_id, s.vehiculo_id, s.posicion, s.motivo, s.detalle, s.created_at,
+         v.placa, ${NOMBRE_ASOCIADO} as asociado_nombre
+    from oferta_saltos s
+    join vehiculos v on v.id = s.vehiculo_id
+    left join asociados a on a.id = v.asociado_id`;
+
+function aSalto(f: Fila): VistaSalto {
+  const placa = texto(f.placa);
+  return {
+    id: texto(f.id),
+    ofertaId: texto(f.oferta_id),
+    vehiculoId: texto(f.vehiculo_id),
+    placa,
+    etiqueta: etiquetaAsociadoPlaca(textoONulo(f.asociado_nombre) ?? 'ASOCIADO DESCONOCIDO', placa),
+    posicion: Number(f.posicion),
+    motivo: texto(f.motivo) as MotivoNoElegible,
+    detalle: textoONulo(f.detalle),
+    creadoEn: instante(f.created_at),
   };
 }
 
@@ -354,6 +381,86 @@ export class ConsultasPostgres implements Consultas {
       posicion: Number(f.posicion),
       total: Number(f.total),
     }));
+  }
+
+  async saltosDeOferta(ofertaId: string): Promise<VistaSalto[]> {
+    const filas = await this.consultar(
+      `${SELECT_SALTO} where s.oferta_id = $1 order by s.posicion asc`,
+      [ofertaId],
+    );
+    return filas.map(aSalto);
+  }
+
+  /**
+   * "Mis turnos que pasaron". Un member llega a la oferta que le pasó por delante gracias a la
+   * política `ofertas_lectura_saltada` (0017); el requerimiento, el cliente y el destino no tienen RLS.
+   * Las fechas del rango son de negocio: se comparan en la zona de `parametros.timezone`.
+   */
+  async saltosDeVehiculos(
+    vehiculoIds: readonly string[],
+    rango: RangoFechas = {},
+  ): Promise<VistaSaltoPropio[]> {
+    if (vehiculoIds.length === 0) return [];
+    const { timezone } = await this.parametros();
+    const filas = await this.consultar(
+      `select s.id, s.oferta_id, s.vehiculo_id, s.posicion, s.motivo, s.detalle, s.created_at,
+              v.placa, ${NOMBRE_ASOCIADO} as asociado_nombre,
+              o.estado as oferta_estado, r.id as requerimiento_id, r.clase_cola,
+              r.fecha_servicio::text as fecha_servicio, c.codigo as cliente, d.nombre as destino
+         from oferta_saltos s
+         join vehiculos v on v.id = s.vehiculo_id
+         left join asociados a on a.id = v.asociado_id
+         join ofertas o on o.id = s.oferta_id
+         join requerimientos r on r.id = o.requerimiento_id
+         left join clientes c on c.id = r.cliente_id
+         left join destinos d on d.id = r.destino_id
+        where s.vehiculo_id = any($1::uuid[])
+          and ($2::date is null or (s.created_at at time zone $4::text)::date >= $2::date)
+          and ($3::date is null or (s.created_at at time zone $4::text)::date <= $3::date)
+        order by s.created_at desc, s.posicion asc`,
+      [[...vehiculoIds], rango.desde ?? null, rango.hasta ?? null, timezone],
+    );
+    return filas.map((f) => ({
+      ...aSalto(f),
+      claseCola: texto(f.clase_cola) as ClaseCola,
+      requerimientoId: texto(f.requerimiento_id),
+      cliente: textoONulo(f.cliente),
+      destino: textoONulo(f.destino),
+      fechaServicio: textoONulo(f.fecha_servicio),
+      ofertaEstado: texto(f.oferta_estado) as VistaSaltoPropio['ofertaEstado'],
+    }));
+  }
+
+  /** Saltadas por placa y motivo en la clase del requerimiento (la cola donde ocurrió el salto). */
+  async saltosPorClase(claseCola: ClaseCola, mes: string): Promise<VistaSaltoAgregado[]> {
+    const { timezone } = await this.parametros();
+    const filas = await this.consultar(
+      `select s.vehiculo_id, v.placa, ${NOMBRE_ASOCIADO} as asociado_nombre, s.motivo,
+              count(*)::int as total
+         from oferta_saltos s
+         join ofertas o on o.id = s.oferta_id
+         join requerimientos r on r.id = o.requerimiento_id
+         join vehiculos v on v.id = s.vehiculo_id
+         left join asociados a on a.id = v.asociado_id
+        where r.clase_cola = $1
+          and to_char(s.created_at at time zone $3::text, 'YYYY-MM') = $2
+        group by s.vehiculo_id, v.placa, asociado_nombre, s.motivo
+        order by v.placa, s.motivo`,
+      [claseCola, mes, timezone],
+    );
+    return filas.map((f) => {
+      const placa = texto(f.placa);
+      return {
+        vehiculoId: texto(f.vehiculo_id),
+        placa,
+        etiqueta: etiquetaAsociadoPlaca(
+          textoONulo(f.asociado_nombre) ?? 'ASOCIADO DESCONOCIDO',
+          placa,
+        ),
+        motivo: texto(f.motivo) as MotivoNoElegible,
+        total: Number(f.total),
+      };
+    });
   }
 
   async parametros(): Promise<Parametros> {

@@ -71,7 +71,7 @@ Monolito modular. El único bounded context candidato a extracción futura es `b
 │   └── compose.prod.yaml # app + Postgres + Redis en un VPS (TASK-0032)
 │   └── compose.yaml    # Postgres 16 + Redis 7 para desarrollo
 ├── e2e/                # Playwright: flujos completos por rol
-├── scripts/            # migrate-db, seed-db, migrate-xlsx, anonymize-staging, backup/restore-db
+├── scripts/            # migrate-db, seed-db, migrate-xlsx, anonymize-staging, backup/restore-db, gps-agente
 ├── docs/adr/           # decisiones de arquitectura
 └── .github/workflows/  # CI: check · e2e · db
 ```
@@ -346,6 +346,11 @@ documentan RBAC y re-autenticación. La tabla siguiente es el resumen humano del
 | `PUT /soportes/*`                            | documentos U                 | solo almacén local: recibe PDF/JPG/PNG (≤ 10 MB) como bytes        |
 | `POST /documentos/:id/soporte/confirmar`     | documentos U                 | verifica que el objeto existe y guarda `archivoUrl` (`s3://bucket/clave` o `local://clave`); audita `documento.soporte` |
 | `GET /documentos/:id/soporte`                | documentos R (own)           | descarga con el rol del actor: bytes (local) o 302 a URL prefirmada (S3); member solo sus placas; audita `documento.descargar` |
+| `POST /gps/ubicaciones`                      | token de servicio (`GPS_INGESTA_TOKEN`) | ingesta del agente satélite (ADR-0007): lote idempotente por placa e instante; devuelve conteos e `intervaloMinutos` |
+| `GET /vehiculos/ubicaciones`                 | vehiculos R (own, `R*`)      | última ubicación por placa; el veedor la recibe sin coordenadas |
+| `GET /vehiculos/:id/ubicaciones`             | vehiculos R (own)            | recorrido de la placa (24 h por defecto); el veedor no accede |
+| `DELETE /vehiculos/:id/ubicaciones`          | vehiculos D + re-auth        | habeas data: borra el historial con motivo; audita `gps.suprimir` |
+| `POST /jobs/purgar-ubicaciones`              | cola U (superadmin)          | purga por `gps_retencion_dias` conservando la última de cada placa |
 | `POST /__e2e/reset`                          | solo `modoE2e`               | vuelve al seed                                                    |
 
 Todas las rutas de spec §8 están implementadas.
@@ -461,6 +466,33 @@ placas) y se audita (`documento.descargar`): son documentos sensibles. La clave 
 `CLAVE_SOPORTE_REGEX` antes de tocar disco (sin `..`). Sin `S3_BUCKET` la API usa el almacén local;
 en producción es el volumen `soportes` de `compose.prod.yaml`.
 
+### 6.13 Ubicación GPS (`rutas/gps.ts`, `gps/`)
+
+Spec §19 fase 4 («integraciones como satélites»), ADR-0007, TASK-0062. Las plataformas de GPS de
+los propietarios no tienen API y se entra a cada una con **las credenciales de ese propietario**,
+así que el proceso que las consulta vive **fuera de la API**: un agente satélite (TASK-0064) lee un
+archivo de cuentas montado solo en su contenedor, normaliza lo que encuentra y entrega lotes a
+`POST /api/v1/gps/ubicaciones`. En la base no hay ninguna columna de credenciales y no se crea
+(RULE-021, spec §12, criterio §20.9).
+
+La ruta es pública para el guard de sesión (como `/metrics`) y exige un token de servicio
+comparado en tiempo constante (`auth/token-servicio.ts`, que también usa `/metrics`): es una
+**excepción explícita a RULE-022**, registrada en ADR-0007. Para que ese token no sea una llave
+maestra, la escritura corre con el contexto RLS `gps_ingesta` —no `sistema`, que escribe cola,
+ofertas, TR y viajes—, y la política de inserción de `vehiculo_ubicaciones` exige exactamente ese
+rol. El lote se valida con un esquema `strict` de `packages/shared/src/gps.ts`: nombre del
+conductor, teléfono o identificador del equipo no caben. Se descartan (contándolo) las placas
+desconocidas, los vehículos que no están activos y las capturas con el reloj en el futuro o más
+viejas que la retención; la unicidad `(vehiculo_id, capturada_en)` hace que reenviar un lote no
+duplique. La respuesta lleva `intervaloMinutos` (de `parametros.gps_intervalo_minutos`), así que
+cambiar el ritmo del agente es editar un parámetro, no redesplegar.
+
+`RepositorioUbicaciones` (`gps/tipos.ts`) tiene los dos adaptadores de siempre: memoria y Postgres
+(`distinct on` para la última lectura de cada placa; purga que conserva esa última aunque sea
+anterior al corte). La ingesta no deja evento de auditoría por lote —no es mutación de dominio y
+serían 72 filas diarias en un log que nunca se purga—; la trazabilidad la dan `recibida_en`,
+`lote_id`, el log con conteos y las métricas `asotracmet_gps_*`, todas sin PII.
+
 ## 7. Frontend (`apps/web`)
 
 Tipos de la API: `apps/web/src/api/tipos.ts` solo reexporta los `z.infer` de
@@ -493,6 +525,19 @@ la API deja de devolver un campo documentado, falla `openapi.test.ts` antes de q
   antes/después legible vía `resumenCambios`) y `Tablero` (ofertas, TR, viajes y equidad por
   placa del mes, solo lectura). `Finance` exporta el CSV del mes y `Me` descarga el extracto de
   habeas data con `descargar()` (`api/cliente.ts`: fetch con Bearer y descarga por blob).
+- Mapa de la flota (ADR-0007, TASK-0066): `/mapa`, ruta perezosa con **Leaflet** y teselas de
+  OpenStreetMap (`VITE_MAPA_TILES_URL` las cambia). Es la única dependencia de cartografía del
+  proyecto y vive en su propio trozo del build (`manualChunks`), excluido del precache de la PWA
+  (`globIgnores`): el modo sin conexión existe para «Mi turno», no para el mapa, y las teselas
+  nunca se guardan. Un punto por placa coloreado por frescura y, al tocarlo, su recorrido de las
+  últimas 24 h (`GET /vehiculos/:id/ubicaciones`). El enlace de la barra y la ruta quedan fuera
+  para el veedor, que no recibe coordenadas.
+- Ubicación GPS (ADR-0007, TASK-0065): `componentes/UltimaUbicacion.tsx` pinta la última posición
+  con un chip de frescura («Reportando», «Reporte atrasado», «Sin señal»), el «hace X min» que
+  calcula el servidor y, solo si la API manda coordenadas, un enlace a un mapa externo. Se usa en
+  la ficha de HSEQ, en la lista de la flota, en la fila de la cola de `Ops` y en «Tu camión» de
+  `Me`, con refresco de 60 s. Al veedor la API le manda las coordenadas en nulo y el componente no
+  puede pintar lo que no tiene (criterio §20.11).
 - Colores (spec §9.3): ámbar oferta abierta, verde TR asignado, rojo cancelado/declinado, gris no
   habilitado.
 - PWA (spec §9.1, TASK-0031): `vite-plugin-pwa` genera el manifest (iconos PNG 192/512 y SVG,
@@ -536,6 +581,7 @@ Migraciones SQL append-only (RULE-025), aplicadas por `migrar.ts` (`pnpm db:migr
 | `0015_totp_anti_replay` | `usuarios.totp_ultimo_paso` (anti-replay TOTP, TASK-0040)                                                                                       |
 | `0016_notificaciones` | `usuarios.preferencias_notificacion`, `app_usuario_id()`, `notificaciones_outbox` (outbox transaccional) y `notificaciones` (bandeja, RLS por usuario) (TASK-0026) |
 | `0014_metricas_mes`   | `metricas_mes` (snapshot mensual de equidad por placa, RLS lectura para todo rol menos member) |
+| `0021_vehiculo_ubicaciones` | `vehiculo_ubicaciones` (ubicación GPS por placa, unique `(vehiculo_id, capturada_en)`, RLS: member solo sus placas, inserta solo `gps_ingesta`, borra `sistema`/`superadmin`, sin UPDATE) + defaults `gps_*` (ADR-0007) |
 
 La API abre cada transacción con `set local app.rol` y `set local app.vehiculo_ids`; sin ellos el
 rol efectivo es `sistema` (migraciones y jobs). **Un superusuario o el owner de las tablas se salta
@@ -572,9 +618,11 @@ sobre Postgres se validan con `pnpm test:db` (CI job `db`).
 | `api`                   | `apps/api/src/notificaciones.test.ts`, `mensajeria/proveedores.test.ts` | worker: outbox → bandeja del asociado + correo, bandeja personal, marcar leída idempotente y solo propia; `tr.asignado` a asociado y ops; declinar avisa a ops; preferencias (sin correo no hay mensaje, WhatsApp por celular, validación, auditoría sin PII); canal caído → `fallida`; repositorio caído → reintento y cierre con error; jobs por tiempo idempotentes; SMTP y WhatsApp con transportes falsos |
 | `api`                   | `apps/api/src/openapi.test.ts`     | contrato: cada ruta registrada está documentada y viceversa; `openapi.json` 3.1 sin `$ref` colgantes, cuerpos y respuestas como componentes, parámetros de ruta y query, seguridad; 26 respuestas reales validadas contra las vistas compartidas (`vistas.ts`) |
 | `api`                   | `apps/api/src/soportes.test.ts`, `soportes/s3.test.ts` | pedir URL → subir PDF → confirmar → descarga con el rol del actor (member solo sus placas), auditoría de subida y descarga; rechazos (tipo, tamaño, clave ajena, cuerpo vacío, traversal, rol sin permiso); `archivoUrl` externa → 302. SigV4: vector oficial de AWS (URL prefirmada), firma por cabecera, MinIO path-style y AWS virtual-hosted con `fetch` falso |
+| `api`                   | `apps/api/src/gps.test.ts`         | ingesta GPS (ADR-0007): 401 sin token, con token inválido y con la ingesta apagada; token anterior durante la rotación; lote válido con `intervaloMinutos` de parámetros; reenviar el mismo lote no duplica; lote vacío de verificación; placa desconocida, vehículo inactivo y captura futura o más vieja que la retención se ignoran contándolas; cuerpo con campos de más → 400; la línea de log lleva conteos y no placas, coordenadas ni token |
 | `api` (`test:redis`)    | `apps/api/src/lock-cola.test.ts`   | lock `cola:{clase}`: se toma durante la transacción y se suelta aunque falle, ajeno → `COLA_LOCKED` sin abrir transacción, TTL vence huérfanos, nadie suelta un token ajeno, fail-open con Redis caído; contra Redis real (`REDIS_URL`): `SET NX PX` + compare-and-delete y la API responde 409 `{origen: redis}` mientras otra instancia tiene la clave |
 | `db`                    | `infra/postgres/migraciones.test.ts` | migraciones idempotentes, tablas, audit append-only, RLS member con `set local role`, unicidad diferible, checks de placa. Se omite sin `DATABASE_URL` |
 | `db`                    | `infra/postgres/api-postgres.test.ts` | la API completa sobre Postgres real: sesiones y enlaces persistidos (logout revoca, enlace de un solo uso), enrolamiento TOTP cifrado en la base, cola con elegibilidad, ofrecer→aceptar persistido (posiciones, audit, secuencia TR), declinar con reoferta, cancelar TR, viewer no muta, member no lee ajenos, "Tu posición: 2 de 10" bajo RLS, `COLA_LOCKED` con la clase bloqueada por otra tx, 20 coordinadores en paralelo sobre un cupo → una sola oferta, parámetros auditados; override y reset persistidos con el factor de re-autenticación; usuarios y placas de asociado persistidos (crear, entrar, cambiar rol) |
+| `db`                    | `infra/postgres/vehiculo-ubicaciones.test.ts` | migración 0021: ninguna columna de credenciales, unicidad `(vehiculo_id, capturada_en)`, `distinct on` devuelve la última, la purga conserva la última de cada placa, RLS (`gps_ingesta` inserta ubicaciones pero no cola; `sistema` no inserta; member solo ve y no escribe las suyas) y `asotracmet_app` sin UPDATE |
 | `db`                    | `infra/postgres/anonimizar.test.ts` | copia anonimizada para staging en una base aparte: sin PII ni secretos, operación intacta, trigger append-only reactivado |
 | `migracion`             | `infra/migracion/modelo.test.ts` | normalizadores (placa, serial de Excel, marcas, clase), plan sobre un libro sintético con la forma del Excel real (precedencia de asociado, alias, habilitaciones, tarifas, cola densa, TR sintético, recaudo y excepciones) y criterios §13.3 sobre el xlsx real si está presente |
 | e2e                     | `e2e/*.spec.ts`                    | login ops (contraseña + TOTP) → ofrecer → login member (enlace) → aceptar → aparece TR; declinar con motivo → pasa a la siguiente placa; viewer sin botones y 403 en API; credenciales inválidas; código TOTP incorrecto y correcto; administrador sin segundo factor lo configura en el primer acceso; el enlace del asociado es de un solo uso; superadmin resetea la cola con motivo, confirmación y segundo factor y el veedor ve la intervención; superadmin da de alta un asociado con placa que entra con su enlace |
@@ -590,7 +638,7 @@ error un servidor que no esté en modo e2e.
 
 Variables (`.env.example`): `PORT`, `HOST`, `AUTH_SECRET`, `CIFRADO_CLAVE` (32 bytes base64; en
 desarrollo se deriva de `AUTH_SECRET`), `CORS_ORIGINS`, `WEB_URL` (base de los enlaces de acceso),
-`MENSAJERIA` (`consola` | `memoria`), `SMTP_URL`, `SMTP_FROM`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `NOTIFICACIONES_INTERVALO_MS` (TASK-0026), `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_FORCE_PATH_STYLE`, `SOPORTES_DIR`, `SOPORTE_MAX_BYTES`, `SOPORTE_URL_SEGUNDOS` (TASK-0043), `OTP_TTL_MINUTOS`, `MAGIC_LINK_TTL_MINUTOS`, `REAUTH_MINUTOS`,
+`MENSAJERIA` (`consola` | `memoria`), `SMTP_URL`, `SMTP_FROM`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `NOTIFICACIONES_INTERVALO_MS` (TASK-0026), `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_FORCE_PATH_STYLE`, `SOPORTES_DIR`, `SOPORTE_MAX_BYTES`, `SOPORTE_URL_SEGUNDOS` (TASK-0043), `GPS_INGESTA_TOKEN` y `GPS_INGESTA_TOKEN_ANTERIOR` (token de servicio del agente GPS, ADR-0007; sin ellos la ingesta responde 401 salvo en modo memoria, que usa un token de desarrollo conocido) y `GPS_INGESTA_RATE_LIMIT_MAX`, `OTP_TTL_MINUTOS`, `MAGIC_LINK_TTL_MINUTOS`, `REAUTH_MINUTOS`,
 `PERSISTENCIA` (`memoria` | `postgres`), `DATABASE_URL`, `REDIS_URL`, `LOG_LEVEL`,
 `LOGIN_RATE_LIMIT_MAX`, `ASOTRACMET_E2E`. La semilla cifra los secretos TOTP con la misma clave que
 la API: `pnpm db:seed` y la API deben correr con el mismo `AUTH_SECRET`/`CIFRADO_CLAVE`. Modos de la API: memoria (por defecto), postgres (`PERSISTENCIA=postgres` +
@@ -608,7 +656,20 @@ que ven las pantallas se calcula al leer (`estadoDocumento`), así que el job so
 columna para consultas SQL y RLS. Notificaciones (TASK-0026, ADR-0006): el worker de avisos
 consume la outbox cada `NOTIFICACIONES_INTERVALO_MS` (5 s) y, con el job del minuto, corren los
 avisos por tiempo (oferta por expirar, documento por vencer, digest de recaudo; `POST /jobs/avisos`
-y `POST /jobs/notificar` los disparan a mano). Snapshot mensual de equidad el día 1 (TASK-0029).
+y `POST /jobs/notificar` los disparan a mano). Snapshot mensual de equidad el día 1 (TASK-0029). Con el job nocturno corre también la purga de
+ubicaciones GPS por `gps_retencion_dias`, que conserva la última lectura de cada placa
+(`POST /jobs/purgar-ubicaciones` la dispara a mano y queda auditada).
+
+**Agente GPS** (ADR-0007, TASK-0064): fuera del proceso de la API. `scripts/gps-agente.ts` se
+empaqueta en `dist/scripts/gps-agente.mjs` y corre en el servicio `gps-agente` del compose
+(`--profile gps`), con el archivo de credenciales montado de solo lectura y sin puertos abiertos.
+Su lógica vive en `apps/api/src/gps/agente/` con un cerco de ESLint que le prohíbe importar
+Fastify, `pg` o Redis. Cada vuelta comprueba el token con un lote vacío, relee el archivo de
+cuentas, consulta cada plataforma con timeout y concurrencia acotada, manda un lote por cuenta y
+adopta el `intervaloMinutos` que devuelve la API. Una cuenta con credenciales inválidas se aparta
+unos ciclos (espera que se duplica) para no provocar el bloqueo de la cuenta del asociado en su
+plataforma. El log filtra por lista blanca: conteos y estados, nunca placas, coordenadas, usuario,
+clave ni token.
 Pendiente (spec §14): digest diario a ops y archivado de `audit_log` a 24 meses.
 
 ## 13. Estado actual vs objetivo
@@ -625,12 +686,14 @@ Pendiente (spec §14): digest diario a ops y archivado de `audit_log` a 24 meses
 | Notificaciones           | outbox transaccional + worker, bandeja in-app con RLS por usuario, correo (SMTP) y WhatsApp (Cloud API) opt-in por preferencia, jobs por tiempo idempotentes | plantillas aprobadas de WhatsApp fuera de la ventana de 24 h; digest a ops | TASK-0026 (hecha)   |
 | Migración Excel          | `pnpm db:migrate-xlsx`: plan puro, carga repetible, informe (docs/migracion-excel.md) | atar TR reales cuando haya planilla con placa; catálogo de destinos canónicos | TASK-0025 |
 | Observabilidad           | `/readyz` con base y Redis, `/metrics` Prometheus (COLA_LOCKED, latencia de ofrecer, declinaciones, ofertas abiertas), OTel (span `cola.transaccion` + métricas OTLP) opcional, runbooks en `docs/runbooks/` | alertas configuradas en el colector | TASK-0030 (hecha)   |
+| Ubicación GPS            | circuito completo con proveedor simulado: agente satélite, ingesta con token, tabla con RLS, lectura por rol, purga, pantallas, recorrido y mapa (TASK-0062..0066) | adaptador real de Vía GPS y de la segunda plataforma | TASK-0067, TASK-0068 |
 | Despliegue               | `pnpm build` (esbuild + Vite + contrato), `Dockerfile` multi-stage, `infra/compose.prod.yaml` (Postgres, Redis, volumen de soportes), backups cifrados y restore (`docs/despliegue.md`), `readyz` con base y Redis | Fly/Render con la misma imagen | TASK-0032 (hecha), 0030 (hecha) |
 
 ## 14. Runbooks
 
 Los runbooks completos viven en [docs/runbooks/](docs/runbooks/README.md) (cola trabada,
-secuencia TR desfasada, member ve placa ajena, restore en staging, observabilidad). Resumen:
+secuencia TR desfasada, member ve placa ajena, restore en staging, observabilidad, agente GPS
+callado). Resumen:
 
 - **Cola trabada / `COLA_LOCKED` persistente**: el lock es un advisory lock de transacción
   (`pg_try_advisory_xact_lock`) más `for update nowait`; muere con la transacción, así que un bloqueo
@@ -641,6 +704,10 @@ secuencia TR desfasada, member ve placa ajena, restore en staging, observabilida
 - **Secuencia TR desfasada (`TR_DUPLICADO`)**: `GET /trs?estado=` para ver el mayor código real;
   `PATCH /parametros { secuencia_tr: { prefix: 'TR-', next: <mayor + 1> } }` como superadmin (queda
   auditado).
+- **Agente GPS callado**: `asotracmet_gps_ultimo_lote_segundos` sube sin parar. Se mira
+  `docker compose --profile gps logs gps-agente`: token rechazado, cuenta apartada por credenciales
+  inválidas o archivo de cuentas ilegible. Nada de esto afecta a la cola
+  ([gps-agente.md](docs/runbooks/gps-agente.md)).
 - **Member ve placa ajena**: incidente de seguridad. Revocar sesión, abrir `TASK` crítica, revisar
   `usuario_vehiculos`, el guard `exigir(..., { permitirOwn })` de la ruta y las políticas RLS.
 
@@ -652,3 +719,4 @@ secuencia TR desfasada, member ve placa ajena, restore en staging, observabilida
 - [ADR-0004](docs/adr/0004-rls-por-settings-de-sesion.md) — RLS con `app.rol` / `app.vehiculo_ids` por transacción.
 - [ADR-0005](docs/adr/0005-escrituras-con-rol-de-servicio.md) — Escrituras del motor con rol de servicio, lecturas con el rol del actor.
 - [ADR-0006](docs/adr/0006-outbox-de-notificaciones-en-postgres.md) — Outbox de notificaciones en Postgres, sin BullMQ.
+- [ADR-0007](docs/adr/0007-ubicacion-gps-por-agente-satelite.md) — Ubicación GPS por agente satélite, sin secretos en la base.
