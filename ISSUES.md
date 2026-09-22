@@ -1,6 +1,6 @@
 # ISSUES.md — Backlog de ASOTRACMET
 
-**Próximo ID: TASK-0072** · Reglas de este archivo: RULE-002 a RULE-007 en [AGENTS.md](AGENTS.md).
+**Próximo ID: TASK-0073** · Reglas de este archivo: RULE-002 a RULE-007 en [AGENTS.md](AGENTS.md).
 
 Estados: `pendiente` · `en_progreso` · `bloqueada` · `hecha` · `descartada`.
 Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable), 2 (viaje y plata),
@@ -81,6 +81,7 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
 | TASK-0069 | Habeas data: supresión de ubicaciones de un vehículo          | 4    | baja      | hecha       |
 | TASK-0070 | Aviso `gps.sin_senal` por la outbox                           | 4    | baja      | pendiente   |
 | TASK-0071 | Bug: `CodigoTr.tsx` no compila (`data-testid` sobre `resto`)  | 1    | alta      | hecha       |
+| TASK-0072 | Auditoría multiagente del repositorio (18 áreas, contrastada)  | 0    | alta      | en_progreso |
 
 ## Tareas
 
@@ -1185,6 +1186,42 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
   `pnpm typecheck` → `src/componentes/ui/CodigoTr.tsx(26,22): error TS7053`. Después:
   `pnpm check` → 38 archivos, 400 passed (41 skipped), lint 0 errores, formato limpio.
   `pnpm test:e2e` → 16 passed.
+
+### TASK-0072 — Auditoría multiagente del repositorio (18 áreas, contrastada)
+
+- **Estado:** en_progreso
+- **Fase:** 0
+- **Prioridad:** alta
+- **Contexto:** Nunca se ha hecho una revisión transversal: cada tarea se verificó solo contra su
+  propio criterio de done (RULE-006), así que nadie ha mirado las contradicciones entre capas, la
+  deuda acumulada, los huecos de cobertura ni el comportamiento bajo carga —que hoy no se mide en
+  ningún sitio—. Se audita el repositorio con 18 agentes especializados (backend, web, fronteras
+  entre piezas, rendimiento, sistema de diseño, piloto con capturas, Docker y tráfico, Node y
+  librerías, seguridad, base de datos, motor de cola contra spec §7/§16/§20, contrato OpenAPI,
+  pruebas, accesibilidad, móvil/PWA, observabilidad, cumplimiento de RULE-001..028 y un inspector
+  jefe que audita a los otros diecisiete). Cada hallazgo grave pasa por tres revisores
+  adversariales con lentes distintas (reproducción, mecanismo, impacto) antes de entrar al informe.
+  La auditoría es de solo lectura sobre el código: su producto son el informe y tareas nuevas.
+  Las pruebas vivas corren en modo e2e (`config.ts` fuerza `persistencia: 'memoria'` con `--e2e`,
+  así que no pueden tocar la base con el Excel legado) y sus artefactos van a `.playwright/`, ya
+  ignorado por git.
+- **Criterio de done:**
+  - [ ] Informe en `docs/auditoria/2026-09-22-informe.md` con veredicto, conteo por gravedad,
+        fichas de los hallazgos S1/S2 en lenguaje llano, plan en tres olas, anexo por agente con
+        su «lo que quedó sin verificar», verificación cruzada del inspector jefe y glosario
+  - [ ] Cada hallazgo S1/S2 del informe lleva archivo:línea, evidencia reproducible y el resultado
+        de su contraste adversarial; lo no contrastado aparece listado con su motivo (RULE-006)
+  - [ ] Tareas nuevas desde `TASK-0073` en este archivo, con los ocho campos de RULE-003, prioridad
+        derivada de la gravedad y `Evidencia` con la medición de antes de arreglar
+  - [ ] `git status --porcelain` al cerrar muestra solo lo que había al abrir más el informe y este
+        archivo: ningún agente editó código, SQL ni configuración (RULE-002)
+  - [ ] Los contenedores ajenos (`crm-*`, `mailforge-*`) y los del proyecto (`infra-*`) siguen con
+        el mismo `StartedAt` y `RestartCount` 0
+  - [ ] `pnpm check` en verde
+- **Referencias:** AGENTS RULE-002, RULE-006, RULE-007, RULE-018, RULE-021; spec §7, §16, §20;
+  ARCHITECTURE §13 (estado actual vs objetivo); TASK-0044..0060 (rediseño en curso),
+  TASK-0052 (a11y, rendimiento y regresión visual en CI), TASK-0061 (guardia de base de pruebas)
+- **Evidencia:** _(comando + resultado + fecha al cerrar)_
 
 ## Plantilla
 
