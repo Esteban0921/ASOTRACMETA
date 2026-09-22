@@ -922,7 +922,8 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
   migración a la vez; con 0021 ya aplicada, verde. `pnpm check` completo en verde: 38 archivos, 400 passed (41 skipped, los de base sin
   `DATABASE_URL`), lint 0 errores, «All matched files use Prettier code style!».
   `DATABASE_URL_TEST=…/asotracmet_test pnpm test:db` → 6 archivos, 41 passed. `pnpm test:e2e`
-  → 16 passed. `pnpm build:contrato` → «83 rutas, 89 esquemas (v1.1.0)».
+  → 16 passed. `pnpm build:contrato` → «83 rutas, 89 esquemas (v1.1.0)». Commit `a8687e5` en la rama
+  `task/TASK-0062-gps-ingesta`.
 
 ### TASK-0063 — GPS: lectura por la API (últimas, ficha), frescura y purga
 
@@ -954,7 +955,8 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
   coordinador recibe 403 al dispararla. `pnpm check` completo en verde: 38 archivos, 400 passed (41 skipped, los de base sin
   `DATABASE_URL`), lint 0 errores, «All matched files use Prettier code style!».
   `DATABASE_URL_TEST=…/asotracmet_test pnpm test:db` → 6 archivos, 41 passed. `pnpm test:e2e`
-  → 16 passed. `pnpm build:contrato` → «83 rutas, 89 esquemas (v1.1.0)».
+  → 16 passed. `pnpm build:contrato` → «83 rutas, 89 esquemas (v1.1.0)». Commit `a8687e5` en la rama
+  `task/TASK-0062-gps-ingesta`.
 
 ### TASK-0064 — Agente GPS satélite: ciclo de 20 minutos, cuentas en archivo de secretos y adaptador simulado
 
@@ -1074,7 +1076,7 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
   al servidor público): el coordinador abre el mapa y ve el lienzo y «placas con ubicación»; al
   veedor no le aparece ni el enlace. `pnpm check` → 40 archivos, 426 passed (41 skipped), lint 0
   errores, formato limpio. `pnpm test:e2e` → 20 passed. `pnpm build:contrato` → «84 rutas, 89
-  esquemas (v1.1.0)».
+  esquemas (v1.1.0)». Commit `a8687e5` en la rama `task/TASK-0062-gps-ingesta`.
 
 ### TASK-0067 — Adaptador GPS real: Vía GPS (`gpsmobile.net`)
 
@@ -1144,7 +1146,8 @@ Fases según spec §19: 0 (diccionario y parámetros), 1 (enturnamiento usable),
   recibe 403. Y un cuarto sobre el extracto: el asociado ve un punto de `FST189` desde el
   instante de la lectura y el propósito menciona la ubicación. `pnpm check` → 40 archivos,
   429 passed (41 skipped). `pnpm test:db` → 41 passed. `pnpm test:e2e` → 20 passed.
-  `pnpm build:contrato` → «84 rutas, 90 esquemas (v1.1.0)».
+  `pnpm build:contrato` → «84 rutas, 90 esquemas (v1.1.0)». Commit `a8687e5` en la rama
+  `task/TASK-0062-gps-ingesta` (subida a origin el 2026-09-22).
 
 ### TASK-0070 — Aviso `gps.sin_senal` por la outbox
 
